@@ -1,21 +1,29 @@
 // ─── Supabase client for persistent data ─────────────────────────────────────
 import { createClient } from '@supabase/supabase-js'
 
-const supabase = createClient(
-  process.env.SUPABASE_URL,
-  process.env.SUPABASE_SERVICE_ROLE_KEY  // server-side uses service role, never anon
-)
+const SUPABASE_URL = process.env.SUPABASE_URL
+const SUPABASE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY
+
+let supabase = null
+
+if (SUPABASE_URL && SUPABASE_URL !== 'placeholder' && SUPABASE_KEY && SUPABASE_KEY !== 'placeholder') {
+  supabase = createClient(SUPABASE_URL, SUPABASE_KEY)
+  console.log('[supabase] connected to', SUPABASE_URL)
+} else {
+  console.warn('[supabase] no credentials set — DB writes disabled')
+}
 
 export async function saveGameResult(summary) {
+  if (!supabase) return
   try {
     const { error } = await supabase
       .from('game_sessions')
       .insert({
-        room_id:    summary.id,
-        map_seed:   summary.mapSeed,
-        player_ids: summary.players,
+        room_id:     summary.id,
+        map_seed:    summary.mapSeed,
+        player_ids:  summary.players,
         duration_ms: summary.duration,
-        ended_at:   new Date().toISOString()
+        ended_at:    new Date().toISOString()
       })
     if (error) console.error('[db] saveGameResult error:', error.message)
   } catch (e) {
@@ -24,6 +32,7 @@ export async function saveGameResult(summary) {
 }
 
 export async function getLeaderboard(limit = 20) {
+  if (!supabase) return []
   const { data, error } = await supabase
     .from('scores')
     .select('player_id, username, kills, score')
@@ -34,6 +43,7 @@ export async function getLeaderboard(limit = 20) {
 }
 
 export async function upsertPlayer(playerId, username) {
+  if (!supabase) return
   const { error } = await supabase
     .from('players')
     .upsert({ id: playerId, username, last_seen: new Date().toISOString() })

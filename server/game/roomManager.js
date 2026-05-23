@@ -14,15 +14,15 @@ export class RoomManager {
       id, mapSeed, map, game,
       players: [hostId],
       maxPlayers: opts.maxPlayers || 6,
-      playing: false,
+      playing: true,          // ← start immediately, no need to wait for 2 players
       createdAt: Date.now(),
       getColonies: () => game.getColonies(),
       removePlayer: (pid) => {
         room.players = room.players.filter(p => p !== pid)
         game.removeColony(pid)
       },
-      isEmpty: () => room.players.length === 0,
-      isPlaying: () => room.playing,
+      isEmpty:    () => room.players.length === 0,
+      isPlaying:  () => room.playing,
       getSummary: () => ({
         id, mapSeed,
         players: room.players,
@@ -39,7 +39,6 @@ export class RoomManager {
     if (!room || room.players.length >= room.maxPlayers) return null
     room.players.push(playerId)
     room.game.addColony(playerId)
-    if (room.players.length >= 2) room.playing = true
     return room
   }
 
@@ -51,5 +50,5 @@ export class RoomManager {
   }
 
   delete(roomId) { this._rooms.delete(roomId) }
-  all() { return this._rooms.values() }
+  all()          { return this._rooms.values() }
 }

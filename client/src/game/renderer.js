@@ -1,70 +1,60 @@
-// ─── Pixi.js v8 renderer ─────────────────────────────────────────────────────
-import * as PIXI          from 'pixi.js'
-import { useGameStore }   from '../store/gameStore.js'
-import { PheromoneLayer } from './pheromoneLayer.js'
-import { AntSprites }     from './antSprites.js'
-import { MapLayer }       from './mapLayer.js'
-import { Camera }         from './camera.js'
-import { initInput }      from './input.js'
+// ─── game/renderer.js — Pixi.js v8 app + main ticker ─────────────────────────
+import * as PIXI from 'pixi.js'
+import { useGameStore }    from '../store/gameStore.js'
+import { PheromoneLayer }  from './pheromoneLayer.js'
+import { AntSprites }      from './antSprites.js'
+import { MapLayer }        from './mapLayer.js'
+import { initInput }       from './input.js'
 
 export let app    = null
-let pheromoneLayer, antSprites, mapLayerInst, camera
+export let camera = null
 
 export async function initRenderer(container) {
   app = new PIXI.Application()
 
   await app.init({
     resizeTo:        container,
-    backgroundColor: 0x0a0a08,
+    backgroundColor: 0x070705,
     antialias:       true,
-    resolution:      window.devicePixelRatio || 1,
+    resolution:      Math.min(window.devicePixelRatio || 1, 2),
     autoDensity:     true
   })
 
   container.appendChild(app.canvas)
 
-  // ── World container (everything that moves with the camera) ──────────────
-  const world = new PIXI.Container()
-  app.stage.addChild(world)
+  // Camera container — all game-world objects live inside this
+  camera = new PIXI.Container()
+  app.stage.addChild(camera)
 
-  // ── Layers (bottom → top) ─────────────────────────────────────────────────
-  mapLayerInst   = new MapLayer()
-  pheromoneLayer = new PheromoneLayer(app)
-  antSprites     = new AntSprites()
+  // Layer order (bottom → top): map → pheromones → ants
+  const mapLayer       = new MapLayer(app, camera)
+  const pheromoneLayer = new PheromoneLayer(app, camera)
+  const antSprites     = new AntSprites(app, camera)
 
-  world.addChild(mapLayerInst.container)
-  world.addChild(pheromoneLayer.container)
-  world.addChild(antSprites.container)
-
-  // ── Camera (wraps the world container) ───────────────────────────────────
-  camera = new Camera(world, app)
-
-  // ── Input (click, drag, keyboard) ────────────────────────────────────────
+  // Click / pan / zoom input
   initInput(app, camera)
 
-  // ── Main ticker ───────────────────────────────────────────────────────────
+  // Generate map when seed arrives from server
+  useGameStore.subscribe(
+    (s) => s.mapSeed,
+    (seed) => { if (seed) mapLayer.generate(seed) }
+  )
+
+  // Main ticker — runs every frame
   app.ticker.add((ticker) => {
-    const store = useGameStore.getState()
-    if (store.phase !== 'playing') return
+    const { phase, colonies, myId, dayPhase } = useGameStore.getState()
+    if (phase !== 'playing') return
 
-    const { colonies, myId, dayPhase } = store
-
-    // Dim the world at night
-    const targetAlpha = dayPhase === 'night' ? 0.55 : 1.0
-    world.alpha += (targetAlpha - world.alpha) * 0.03
+    // Smoothly dim screen at night
+    const targetAlpha = dayPhase === 'night' ? 0.45 : 1
+    camera.alpha += (targetAlpha - camera.alpha) * 0.02
 
     pheromoneLayer.tick(ticker.deltaTime, colonies)
-    antSprites.tick(colonies, myId, store.selectedAntIds)
-    camera.followQueen(colonies, myId)
+    antSprites.tick(colonies, myId)
   })
 
-  // Resize handler
-  window.addEventListener('resize', () => {
-    pheromoneLayer.resize()
-  })
+  window.addEventListener('resize', () => app.resize())
 
   console.log('[renderer] Pixi.js v8 ready')
+  return app
 }
-
-export function getApp()    { return app }
-export function getCamera() { return camera }
