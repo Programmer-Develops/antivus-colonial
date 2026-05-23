@@ -1,67 +1,72 @@
-// ─── Pheromone trail system using Pixi RenderTexture ─────────────────────────
-// Each colony has its own RenderTexture. Each frame we:
-//   1. Slightly fade the whole texture (trail decay)
-//   2. Draw a dot at each ant's position in the colony color
-// The result is living, decaying pheromone trails.
+// ─── game/pheromoneLayer.js — GPU pheromone trail decay ──────────────────────
+// Each colony gets a RenderTexture. Each tick:
+//   1. Draw a faint black rect over it (= trail decay)
+//   2. Draw colored dots at each ant's position (= new trail)
+// Result: living trails that fade naturally over ~8 seconds.
 import * as PIXI from 'pixi.js'
 
-const DECAY_ALPHA = 0.012   // how fast trails fade per frame
-const DOT_RADIUS  = 3       // trail dot size in world pixels
+const DECAY_ALPHA = 0.008   // lower = trails last longer
+const DOT_RADIUS  = 4
 
 export class PheromoneLayer {
-  constructor(app) {
-    this.app = app
+  constructor(app, parent) {
+    this.app       = app
     this.container = new PIXI.Container()
-    this.textures = {}    // { [playerId]: PIXI.RenderTexture }
-    this.sprites  = {}    // { [playerId]: PIXI.Sprite }
-    this.graphics = new PIXI.Graphics()
+    this.container.alpha = 0.7
+    parent.addChildAt(this.container, 0)
+
+    this._textures = {}   // playerId → RenderTexture
+    this._sprites  = {}   // playerId → Sprite
+    this._g        = new PIXI.Graphics()
   }
 
-  // Ensure a RenderTexture exists for a given player
-  _ensureTexture(playerId) {
-    if (this.textures[playerId]) return
+  _ensure(playerId) {
+    if (this._textures[playerId]) return
     const { width, height } = this.app.screen
     const rt = PIXI.RenderTexture.create({ width, height })
+
     const sprite = new PIXI.Sprite(rt)
-    sprite.alpha = 0.65
-    this.textures[playerId] = rt
-    this.sprites[playerId]  = sprite
+    sprite.blendMode = 'add'
+    this._textures[playerId] = rt
+    this._sprites[playerId]  = sprite
     this.container.addChild(sprite)
   }
 
   tick(delta, colonies) {
     if (!colonies) return
 
-    for (const [playerId, colony] of Object.entries(colonies)) {
-      if (!colony.ants || !colony.color) continue
-      this._ensureTexture(playerId, colony.color)
+    for (const [pid, colony] of Object.entries(colonies)) {
+      if (!colony?.ants || !colony?.color) continue
+      this._ensure(pid, colony.color)
 
-      const rt = this.textures[playerId]
-      const g  = this.graphics
-      g.clear()
+      const rt    = this._textures[pid]
+      const g     = this._g
+      const color = parseInt(colony.color.replace('#', ''), 16)
 
-      // Fade the existing texture
-      const fadeRect = new PIXI.Graphics()
+      // Fade existing trail
+      const fade = new PIXI.Graphics()
         .rect(0, 0, rt.width, rt.height)
-        .fill({ color: 0x000000, alpha: DECAY_ALPHA })
-      this.app.renderer.render({ container: fadeRect, target: rt, clear: false })
+        .fill({ color: 0x000000, alpha: DECAY_ALPHA * delta })
+      this.app.renderer.render({ container: fade, target: rt, clear: false })
 
-      // Draw a dot for each ant
-      const colorNum = parseInt(colony.color.replace('#', ''), 16)
+      // Paint new dots at each ant position
+      g.clear()
       for (const ant of Object.values(colony.ants)) {
-        if (!ant.position) continue
+        if (!ant?.position) continue
+        // Scouts leave no trail (stealth mechanic)
+        if (ant.caste === 'scout') continue
         g.circle(ant.position.x, ant.position.y, DOT_RADIUS)
-         .fill({ color: colorNum, alpha: 0.9 })
+         .fill({ color, alpha: 0.85 })
       }
       this.app.renderer.render({ container: g, target: rt, clear: false })
     }
   }
 
+  // Call on window resize — recreate textures at new size
   resize() {
-    // Clear all textures on resize — they'll be recreated next tick
-    for (const rt of Object.values(this.textures)) rt.destroy()
-    this.textures = {}
-    this.sprites  = {}
+    for (const rt of Object.values(this._textures)) rt.destroy(true)
+    this._textures = {}
     this.container.removeChildren()
+    this._sprites = {}
   }
 }
