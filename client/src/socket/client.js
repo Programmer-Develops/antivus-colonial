@@ -5,10 +5,17 @@ import { useGameStore } from '../store/gameStore.js'
 let socket = null
 
 export function initSocket() {
-  socket = io({ transports: ['websocket'], reconnectionAttempts: 5 })
+  // Explicitly connect to the game server on port 3000
+  // In production this would be your Fly.io URL
+  const SERVER_URL = import.meta.env.VITE_SERVER_URL || 'http://localhost:3000'
+
+  socket = io(SERVER_URL, {
+    transports: ['websocket'],
+    reconnectionAttempts: 5
+  })
+
   const store = useGameStore.getState()
 
-  // ── Connection ────────────────────────────────────────────────────────────
   socket.on('connect', () => {
     store.setMyId(socket.id)
     console.log('[socket] connected:', socket.id)
@@ -18,7 +25,6 @@ export function initSocket() {
     console.warn('[socket] disconnected:', reason)
   })
 
-  // ── Room events ───────────────────────────────────────────────────────────
   socket.on('room:joined', ({ roomId, players, mapSeed }) => {
     store.setRoom(roomId, players)
     store.setMap(mapSeed)
@@ -35,7 +41,6 @@ export function initSocket() {
     showToast(msg, 'error')
   })
 
-  // ── Game state ────────────────────────────────────────────────────────────
   socket.on('state:full', ({ colonies }) => {
     store.setColonies(colonies)
     const mine = colonies[socket.id]
@@ -51,18 +56,15 @@ export function initSocket() {
     }
   })
 
-  // ── Day/night ─────────────────────────────────────────────────────────────
   socket.on('day:cycle', ({ phase }) => {
     store.setDayCycle(phase)
     showToast(phase === 'night' ? '🌙 Night falls...' : '☀️ Dawn breaks', 'info')
   })
 
-  // ── Combat ────────────────────────────────────────────────────────────────
   socket.on('kill:feed', (entry) => {
     store.addKill(entry)
   })
 
-  // ── Game over ─────────────────────────────────────────────────────────────
   socket.on('game:over', ({ winner, winnerName }) => {
     store.setPhase('gameover')
     showGameOver(winner === socket.id, winnerName)
@@ -71,19 +73,17 @@ export function initSocket() {
   return socket
 }
 
-// ── Emit helpers (used by UI and input system) ────────────────────────────────
 export const emit = {
-  createRoom: (opts)           => socket?.emit('room:create', opts),
-  joinRoom:   (roomId)         => socket?.emit('room:join', { roomId }),
-  moveAnts:   (antIds, target) => socket?.emit('ants:move', { antIds, target }),
-  buildChamber:(type, position)=> socket?.emit('chamber:build', { type, position }),
-  attackTarget:(antIds, tid)   => socket?.emit('ants:attack', { antIds, targetId: tid }),
-  sendChat:   (msg)            => socket?.emit('chat', { msg })
+  createRoom:   (opts)           => socket?.emit('room:create', opts),
+  joinRoom:     (roomId)         => socket?.emit('room:join', { roomId }),
+  moveAnts:     (antIds, target) => socket?.emit('ants:move', { antIds, target }),
+  buildChamber: (type, position) => socket?.emit('chamber:build', { type, position }),
+  attackTarget: (antIds, tid)    => socket?.emit('ants:attack', { antIds, targetId: tid }),
+  sendChat:     (msg)            => socket?.emit('chat', { msg })
 }
 
 export function getSocket() { return socket }
 
-// ── Internal UI helpers ───────────────────────────────────────────────────────
 function hideLobby() {
   const el = document.getElementById('lobby-screen')
   if (el) el.style.display = 'none'
