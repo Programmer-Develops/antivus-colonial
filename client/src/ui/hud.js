@@ -1,6 +1,6 @@
+import { emit } from "../socket/client.js"
 // ─── ui/hud.js — HUD + controls help panel ───────────────────────────────────
 import { useGameStore } from '../store/gameStore.js'
-import { emit }         from '../socket/client.js'
 
 export function initUI(overlay) {
   overlay.insertAdjacentHTML('beforeend', `
@@ -284,7 +284,7 @@ let hudVisible = false
 function showHUDPanels() {
   if (hudVisible) return
   hudVisible = true
-  ;['hud-resources','hud-daycycle','hud-colony','hud-build','hud-killfeed','help-btn']
+  ;['hud-resources','hud-daycycle','hud-colony','hud-build','hud-killfeed','help-btn','hud-recruit']
     .forEach(id => {
       const el = document.getElementById(id)
       if (el) el.style.display = 'flex'
@@ -361,6 +361,77 @@ function injectHUDStyles() {
       color:#6b6b5a; font-size:12px; font-style:italic;
       margin-top:2px; padding-left:4px;
     }
+  `
+  document.head.appendChild(s)
+}
+
+// ── Recruitment panel (added separately) ─────────────────────────────────────
+export function initRecruitPanel(overlay) {
+  overlay.insertAdjacentHTML('beforeend', `
+    <div id="hud-recruit" style="
+      position:absolute; bottom:90px; right:16px; display:none;
+      flex-direction:column; gap:6px;
+    ">
+      <div style="font-family:'Cinzel',serif;font-size:9px;letter-spacing:0.2em;
+        color:#4ade80;text-align:right;margin-bottom:2px">RECRUIT</div>
+      ${recruitBtn('worker',     '⚫', 'Worker',     10,  'Gathers food')}
+      ${recruitBtn('soldier',    '▪',  'Soldier',    25,  'Strong fighter')}
+      ${recruitBtn('scout',      '▲',  'Scout',      15,  'Fast, no trail')}
+      ${recruitBtn('ranger',     '✚',  'Ranger',     30,  'Ranged acid')}
+      ${recruitBtn('farmer',     '🍄', 'Farmer',     20,  'Passive income')}
+      ${recruitBtn('builder',    '🏗',  'Builder',    20,  'Builds 3x fast')}
+      ${recruitBtn('bombardier', '💣', 'Bombardier', 60,  'Suicide bomber')}
+    </div>
+  `)
+
+  // Show/hide with R key or button
+  window.addEventListener('keydown', (e) => {
+    if ((e.key === 'r' || e.key === 'R') && useGameStore.getState().phase === 'playing') {
+      toggleRecruit()
+    }
+  })
+
+  document.querySelectorAll('[data-recruit]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      emit.recruitAnt(btn.dataset.recruit)
+    })
+  })
+
+  injectRecruitStyles()
+}
+
+function recruitBtn(caste, icon, label, cost, tip) {
+  return `
+    <button class="recruit-btn" data-recruit="${caste}" title="${tip}">
+      <span class="recruit-icon">${icon}</span>
+      <span class="recruit-label">${label}</span>
+      <span class="recruit-cost">${cost}🍃</span>
+    </button>
+  `
+}
+
+function toggleRecruit() {
+  const el = document.getElementById('hud-recruit')
+  if (!el) return
+  el.style.display = el.style.display === 'none' ? 'flex' : 'none'
+}
+
+function injectRecruitStyles() {
+  if (document.getElementById('recruit-styles')) return
+  const s = document.createElement('style')
+  s.id = 'recruit-styles'
+  s.textContent = `
+    .recruit-btn {
+      display:flex; align-items:center; gap:8px; padding:7px 12px;
+      background:rgba(7,7,5,0.9); backdrop-filter:blur(8px);
+      border:0.5px solid rgba(74,222,128,0.2); border-radius:8px;
+      cursor:pointer; color:#e8e6d9; transition:all 0.15s;
+      font-family:'Crimson Pro',serif; width:170px;
+    }
+    .recruit-btn:hover { border-color:rgba(74,222,128,0.5); background:rgba(74,222,128,0.06); transform:translateX(-2px); }
+    .recruit-icon  { font-size:14px; width:20px; text-align:center; }
+    .recruit-label { font-size:13px; flex:1; text-align:left; }
+    .recruit-cost  { font-size:11px; color:#4ade80; }
   `
   document.head.appendChild(s)
 }
