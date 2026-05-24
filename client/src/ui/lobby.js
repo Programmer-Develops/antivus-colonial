@@ -105,7 +105,8 @@ export function showLobby() {
 
   // ── Create room ────────────────────────────────────────────────────────────
   document.getElementById('btn-create').addEventListener('click', () => {
-    const name = document.getElementById('colony-name').value.trim() || 'Colony'
+    const name = document.getElementById('colony-name').value.trim()
+    if (!name) { highlightNameInput(); return }
     const max  = parseInt(document.getElementById('max-players').value)
     useGameStore.getState().setMyName(name)
     emit.createRoom({ name, maxPlayers: max })
@@ -138,7 +139,8 @@ export function showLobby() {
 
   // ── Join by code ───────────────────────────────────────────────────────────
   document.getElementById('btn-join-code').addEventListener('click', () => {
-    const name = document.getElementById('colony-name').value.trim() || 'Colony'
+    const name = document.getElementById('colony-name').value.trim()
+    if (!name) { highlightNameInput(); return }
     const code = document.getElementById('room-code-input').value.trim()
     if (!code) { document.getElementById('room-code-input').focus(); return }
     useGameStore.getState().setMyName(name)
@@ -324,4 +326,16 @@ function injectLobbyStyles() {
     }
   `
   document.head.appendChild(s)
+}
+
+function highlightNameInput() {
+  const el = document.getElementById('colony-name')
+  if (!el) return
+  el.focus()
+  el.style.borderColor = 'rgba(239,68,68,0.7)'
+  el.placeholder = '← You need a colony name!'
+  setTimeout(() => {
+    el.style.borderColor = ''
+    el.placeholder = 'Name your colony...'
+  }, 2500)
 }

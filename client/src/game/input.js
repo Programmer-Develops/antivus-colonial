@@ -1,37 +1,55 @@
-// ─── game/input.js — Selection, movement, pan, zoom ──────────────────────────
 import { useGameStore } from '../store/gameStore.js'
 import { emit }         from '../socket/client.js'
 
 const TILE     = 32
-const MAP_PX   = 64 * TILE   // 2048
-const MIN_ZOOM = 0.35
-const MAX_ZOOM = 2.5
+const MAP_PX   = 64 * TILE
+const MIN_ZOOM = 0.25
+const MAX_ZOOM = 3.0
 
 let isDragging = false
-let dragStart  = { x: 0, y: 0 }
-let camStart   = { x: 0, y: 0 }
-let zoom       = 1
-let hasDragged = false  // distinguish drag from click
+let dragStart  = { x:0, y:0 }
+let camStart   = { x:0, y:0 }
+let hasDragged = false
+let _app       = null
+let _camera    = null
+
+// Track current zoom separately so we can zoom toward mouse
+let currentZoom = 1.5
 
 export function initInput(app, camera) {
+  _app    = app
+  _camera = camera
   const canvas = app.canvas
 
-  // ── Scroll to zoom ─────────────────────────────────────────────────────────
+  // ── Zoom toward mouse position ─────────────────────────────────────────────
   canvas.addEventListener('wheel', (e) => {
     e.preventDefault()
-    const factor = e.deltaY > 0 ? 0.9 : 1.1
-    zoom = Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, zoom * factor))
-    camera.scale.set(zoom)
-    clampCamera(camera, app)
+    const rect   = canvas.getBoundingClientRect()
+    const mouseX = e.clientX - rect.left
+    const mouseY = e.clientY - rect.top
+
+    // World position under mouse BEFORE zoom
+    const worldX = (mouseX - camera.x) / currentZoom
+    const worldY = (mouseY - camera.y) / currentZoom
+
+    const factor  = e.deltaY > 0 ? 0.88 : 1.14
+    currentZoom   = Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, currentZoom * factor))
+    camera.scale.set(currentZoom)
+
+    // Reposition camera so world point stays under mouse
+    camera.x = mouseX - worldX * currentZoom
+    camera.y = mouseY - worldY * currentZoom
+
+    clampCamera()
   }, { passive: false })
 
-  // ── Right-click OR middle-click drag to pan ────────────────────────────────
+  // ── Right-click / middle-click drag to pan ─────────────────────────────────
   canvas.addEventListener('mousedown', (e) => {
     if (e.button === 1 || e.button === 2) {
       isDragging = true
       hasDragged = false
-      dragStart  = { x: e.clientX, y: e.clientY }
-      camStart   = { x: camera.x,  y: camera.y }
+      dragStart  = { x:e.clientX, y:e.clientY }
+      camStart   = { x:camera.x,  y:camera.y }
       canvas.style.cursor = 'grabbing'
     }
   })
@@ -43,7 +61,7 @@ export function initInput(app, camera) {
     if (Math.abs(dx) > 3 || Math.abs(dy) > 3) hasDragged = true
     camera.x = camStart.x + dx
     camera.y = camStart.y + dy
-    clampCamera(camera, app)
+    clampCamera()
   })
 
   window.addEventListener('mouseup', (e) => {
@@ -53,50 +71,48 @@ export function initInput(app, camera) {
     }
   })
 
-  canvas.addEventListener('contextmenu', (e) => e.preventDefault())
+  canvas.addEventListener('contextmenu', e => e.preventDefault())
 
-  // ── Left-click: select ant OR move selected ants ───────────────────────────
+  // ── Left-click: select ant OR move selected ants OR place chamber ──────────
   canvas.addEventListener('click', (e) => {
     if (e.button !== 0 || hasDragged) return
-    if (useGameStore.getState().phase !== 'playing') return
+    const { phase, selectedAntIds, placingChamber } = useGameStore.getState()
+    if (phase !== 'playing') return
 
     const rect = canvas.getBoundingClientRect()
-    // Convert screen → world coordinates
-    const wx = (e.clientX - rect.left  - camera.x) / zoom
-    const wy = (e.clientY - rect.top   - camera.y) / zoom
+    const wx   = (e.clientX - rect.left  - camera.x) / currentZoom
+    const wy   = (e.clientY - rect.top   - camera.y) / currentZoom
 
-    const { colonies, myId, selectedAntIds } = useGameStore.getState()
+    // Chamber placement mode
+    if (placingChamber) {
+      emit.buildChamber(placingChamber, { x:wx, y:wy })
+      useGameStore.getState().setPlacingChamber(null)
+      clearPlacementCursor()
+      spawnClickRipple(e.clientX - rect.left, e.clientY - rect.top, '#fbbf24')
+      return
+    }
+
+    const { colonies, myId } = useGameStore.getState()
     const myColony = colonies[myId]
     if (!myColony) return
 
-    // Check if clicked near any of MY ants
     const clickedAntId = findAntAt(wx, wy, myColony)
 
     if (clickedAntId) {
-      // Select the clicked ant (or deselect if already selected)
       const isSelected = selectedAntIds.includes(clickedAntId)
-      if (isSelected) {
-        useGameStore.getState().setSelection([])
-        updateSelectionIndicator(0)
-      } else {
-        useGameStore.getState().setSelection([clickedAntId])
-        updateSelectionIndicator(1)
-        spawnSelectPulse(e.clientX - rect.left, e.clientY - rect.top, '#4ade80')
-      }
+      useGameStore.getState().setSelection(isSelected ? [] : [clickedAntId])
+      updateSelectionUI(isSelected ? 0 : 1)
+      if (!isSelected) spawnClickRipple(e.clientX - rect.left, e.clientY - rect.top, '#4ade80')
+    } else if (selectedAntIds.length > 0) {
+      emit.moveAnts(selectedAntIds, { x:wx, y:wy })
+      spawnClickRipple(e.clientX - rect.left, e.clientY - rect.top, '#4ade80')
     } else {
-      // No ant clicked — if ants are selected, move them here
-      if (selectedAntIds.length > 0) {
-        emit.moveAnts(selectedAntIds, { x: wx, y: wy })
-        spawnClickRipple(e.clientX - rect.left, e.clientY - rect.top)
-      } else {
-        // Nothing selected and clicked empty space — deselect
-        useGameStore.getState().setSelection([])
-        updateSelectionIndicator(0)
-      }
+      useGameStore.getState().setSelection([])
+      updateSelectionUI(0)
     }
   })
 
-  // ── Select ALL own ants with 'A' key ───────────────────────────────────────
+  // ── Keyboard shortcuts ─────────────────────────────────────────────────────
   window.addEventListener('keydown', (e) => {
     const { phase, colonies, myId } = useGameStore.getState()
     if (phase !== 'playing') return
@@ -106,90 +122,105 @@ export function initInput(app, camera) {
       if (!myColony) return
       const allIds = Object.keys(myColony.ants)
       useGameStore.getState().setSelection(allIds)
-      updateSelectionIndicator(allIds.length)
+      updateSelectionUI(allIds.length)
       showHint(`All ${allIds.length} ants selected`)
     }
 
     if (e.key === 'Escape') {
       useGameStore.getState().setSelection([])
-      updateSelectionIndicator(0)
+      useGameStore.getState().setPlacingChamber(null)
+      updateSelectionUI(0)
+      clearPlacementCursor()
     }
+
+    if (e.key === 'r' || e.key === 'R') togglePanel('hud-recruit')
+    if (e.key === 'b' || e.key === 'B') togglePanel('hud-build')
   })
 }
 
-// ── Find the closest ant within click radius ──────────────────────────────────
+// ── Helpers ────────────────────────────────────────────────────────────────────
 function findAntAt(wx, wy, colony) {
-  const CLICK_RADIUS = 18  // world pixels — generous for small ants
-  let closest = null
-  let closestDist = CLICK_RADIUS
-
+  let best = null, bestDist = 20
   for (const [antId, ant] of Object.entries(colony.ants || {})) {
     if (!ant.position) continue
-    const dx   = ant.position.x - wx
-    const dy   = ant.position.y - wy
-    const dist = Math.sqrt(dx*dx + dy*dy)
-    if (dist < closestDist) {
-      closestDist = dist
-      closest     = antId
-    }
+    const dx = ant.position.x - wx
+    const dy = ant.position.y - wy
+    const d  = Math.sqrt(dx*dx+dy*dy)
+    if (d < bestDist) { bestDist = d; best = antId }
   }
-  return closest
+  return best
 }
 
-function clampCamera(camera, app) {
-  const minX = app.screen.width  - MAP_PX * zoom
-  const minY = app.screen.height - MAP_PX * zoom
-  camera.x = Math.min(0, Math.max(minX, camera.x))
-  camera.y = Math.min(0, Math.max(minY, camera.y))
+function clampCamera() {
+  if (!_app || !_camera) return
+  const minX = _app.screen.width  - MAP_PX * currentZoom
+  const minY = _app.screen.height - MAP_PX * currentZoom
+  _camera.x = Math.min(0, Math.max(minX, _camera.x))
+  _camera.y = Math.min(0, Math.max(minY, _camera.y))
 }
 
-function updateSelectionIndicator(count) {
+function updateSelectionUI(count) {
   const el = document.getElementById('selection-count')
   if (!el) return
-  el.textContent = count > 0 ? `${count} ant${count > 1 ? 's' : ''} selected` : ''
+  el.textContent = count > 0 ? `${count} ant${count>1?'s':''} selected` : ''
   el.style.opacity = count > 0 ? '1' : '0'
 }
 
 function showHint(msg) {
   const el = document.getElementById('hint-text')
   if (!el) return
-  el.textContent = msg
-  el.style.opacity = '1'
+  el.textContent = msg; el.style.opacity = '1'
   clearTimeout(el._t)
   el._t = setTimeout(() => { el.style.opacity = '0' }, 2000)
 }
 
-function spawnClickRipple(x, y) {
-  spawnRing(x, y, '#4ade80', 'scale(4)')
+function togglePanel(id) {
+  const el = document.getElementById(id)
+  if (!el) return
+  el.style.display = el.style.display === 'none' ? 'flex' : 'none'
 }
 
-function spawnSelectPulse(x, y, color) {
-  spawnRing(x, y, color, 'scale(2.5)')
+function clearPlacementCursor() {
+  document.body.style.cursor = 'default'
+  const el = document.getElementById('placement-hint')
+  if (el) el.remove()
 }
 
-function spawnRing(x, y, color, toScale) {
-  injectRippleStyle()
+export function startPlacingChamber(type) {
+  useGameStore.getState().setPlacingChamber(type)
+  document.body.style.cursor = 'crosshair'
+  // Show floating hint
+  let el = document.getElementById('placement-hint')
+  if (!el) {
+    el = document.createElement('div')
+    el.id = 'placement-hint'
+    el.style.cssText = `
+      position:fixed; bottom:120px; left:50%; transform:translateX(-50%);
+      background:rgba(251,191,36,0.15); border:0.5px solid rgba(251,191,36,0.5);
+      border-radius:99px; padding:6px 20px;
+      font-family:'Cinzel',serif; font-size:11px; letter-spacing:0.1em;
+      color:#fbbf24; pointer-events:none; z-index:50;
+    `
+    document.body.appendChild(el)
+  }
+  el.textContent = `Click inside your territory to place ${type.toUpperCase()} · Esc to cancel`
+}
+
+function spawnClickRipple(x, y, color) {
+  if (!document.getElementById('ripple-style')) {
+    const s = document.createElement('style')
+    s.id = 'ripple-style'
+    s.textContent = '@keyframes rippleAnim { to { transform:scale(4); opacity:0; } }'
+    document.head.appendChild(s)
+  }
   const el = document.createElement('div')
   el.style.cssText = `
     position:fixed; left:${x}px; top:${y}px;
-    width:16px; height:16px; margin:-8px;
+    width:14px; height:14px; margin:-7px;
     border:2px solid ${color}; border-radius:50%;
     pointer-events:none; z-index:200;
-    animation: rippleAnim 0.45s ease-out forwards;
-    --to-scale: ${toScale};
+    animation: rippleAnim 0.4s ease-out forwards;
   `
   document.body.appendChild(el)
-  setTimeout(() => el.remove(), 450)
-}
-
-function injectRippleStyle() {
-  if (document.getElementById('ripple-style')) return
-  const s = document.createElement('style')
-  s.id = 'ripple-style'
-  s.textContent = `
-    @keyframes rippleAnim {
-      to { transform: var(--to-scale, scale(3)); opacity: 0; }
-    }
-  `
-  document.head.appendChild(s)
+  setTimeout(() => el.remove(), 400)
 }
