@@ -78,8 +78,8 @@ export function showLobby() {
             <button id="btn-refresh" style="background:none;border:none;color:#6b6b5a;
               font-size:12px;cursor:pointer;font-family:'Crimson Pro',serif">⟳ Refresh</button>
           </div>
-          <div id="rooms-list" style="display:flex;flex-direction:column;gap:6px;min-height:60px">
-            <div style="color:#3a3a2a;font-size:13px;font-style:italic;text-align:center;padding:16px 0">
+          <div id="rooms-list" style="display:flex;flex-direction:column;gap:6px;min-height:40px">
+            <div style="color:#3a3a2a;font-size:13px;font-style:italic;text-align:center;padding:8px 0">
               Searching for open rooms...
             </div>
           </div>
@@ -170,7 +170,7 @@ function renderRoomList(list) {
 
   if (!list || list.length === 0) {
     container.innerHTML = `
-      <div style="color:#3a3a2a;font-size:13px;font-style:italic;text-align:center;padding:16px 0">
+      <div style="color:#3a3a2a;font-size:13px;font-style:italic;text-align:center;padding:8px 0">
         No open rooms — create one and invite friends!
       </div>`
     return
@@ -238,7 +238,7 @@ function injectLobbyStyles() {
       width:100%; height:100%;
       background: radial-gradient(ellipse at 30% 20%, #0d1f0a 0%, #070705 60%);
       display:flex; align-items:center; justify-content:center;
-      overflow-y:auto; position:relative;
+      overflow:hidden; position:relative;
     }
     .lobby-particles { position:absolute; inset:0; pointer-events:none; }
     .particle {
@@ -248,14 +248,14 @@ function injectLobbyStyles() {
     @keyframes float { 0%{transform:translateY(0) rotate(0deg)} 100%{transform:translateY(-120vh) rotate(360deg)} }
     .lobby-content {
       position:relative; z-index:2; width:min(800px,95vw);
-      display:flex; flex-direction:column; gap:1.5rem;
-      padding:2rem 0; animation: fadeUp 0.7s ease both;
+      display:flex; flex-direction:column; gap:0.75rem;
+      padding:1rem 0; animation: fadeUp 0.7s ease both;
     }
     @keyframes fadeUp { from{opacity:0;transform:translateY(24px)} to{opacity:1;transform:translateY(0)} }
     .lobby-header { text-align:center; }
-    .lobby-logo { display:inline-flex; align-items:center; gap:1rem; margin-bottom:0.75rem; }
+    .lobby-logo { display:inline-flex; align-items:center; gap:1rem; margin-bottom:0.4rem; }
     .logo-ant  { font-size:3rem; filter:drop-shadow(0 0 16px #4ade8077); }
-    .logo-main { font-family:'Cinzel',serif; font-size:2.5rem; font-weight:800; color:#e8e6d9; letter-spacing:0.12em; line-height:1; }
+    .logo-main { font-family:'Cinzel',serif; font-size:2rem; font-weight:800; color:#e8e6d9; letter-spacing:0.12em; line-height:1; }
     .logo-sub  { font-family:'Cinzel',serif; font-size:0.8rem; font-weight:600; color:#4ade80; letter-spacing:0.35em; }
     .lobby-tagline { font-size:1.05rem; color:#6b6b5a; font-style:italic; }
     .lobby-panels { display:flex; gap:1rem; align-items:flex-start; }
@@ -263,7 +263,7 @@ function injectLobbyStyles() {
     .lobby-panel {
       flex:1; background:#0f0f0a;
       border:0.5px solid rgba(74,222,128,0.15); border-radius:12px;
-      padding:1.5rem; display:flex; flex-direction:column; gap:0.75rem;
+      padding:1rem; display:flex; flex-direction:column; gap:0.6rem;
       transition:border-color 0.2s;
     }
     .lobby-panel:hover { border-color:rgba(74,222,128,0.3); }
@@ -294,7 +294,7 @@ function injectLobbyStyles() {
     }
     .lobby-section {
       background:#0f0f0a; border:0.5px solid rgba(74,222,128,0.1);
-      border-radius:12px; padding:1.25rem 1.5rem;
+      border-radius:12px; padding:0.85rem 1.25rem;
     }
     .room-row {
       display:flex; align-items:center; gap:12px;
