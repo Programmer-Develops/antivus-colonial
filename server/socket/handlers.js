@@ -18,7 +18,6 @@ export function registerSocketHandlers(io) {
     socket.on('room:create', (opts) => {
       const room = rooms.create(socket.id, opts)
       socket.join(room.id)
-      // Set colony name from opts
       room.game.setColonyName(socket.id, opts.name || 'Colony')
       socket.emit('room:joined', { roomId:room.id, players:room.players, mapSeed:room.mapSeed })
       socket.emit('state:full',  { colonies:room.getColonies() })
@@ -62,28 +61,28 @@ export function registerSocketHandlers(io) {
       socket.emit('rooms:list', getRoomList())
     })
 
-    let cmdCount = 0
-    setInterval(() => { cmdCount = 0 }, 1000)
-
-    socket.on('ants:move', ({ antIds, target }) => {
-      if (cmdCount++ > 60) return
+    // ── Direct keyboard WASD / Mouse Aim input sync ──────────────────────────
+    socket.on('player:input', (input) => {
       const room = rooms.getByPlayer(socket.id)
-      if (!room) return
-      for (const id of antIds) room.game.moveAnt(socket.id, id, target)
+      if (room) room.game.updatePlayerInput(socket.id, input)
     })
 
-    socket.on('ant:move', ({ antId, target }) => {
-      if (cmdCount++ > 60) return
+    // ── Stat point upgrade clicked ───────────────────────────────────────────
+    socket.on('player:upgrade-stat', ({ stat }) => {
       const room = rooms.getByPlayer(socket.id)
-      if (!room) return
-      room.game.moveAnt(socket.id, antId, target)
+      if (room) {
+        const res = room.game.upgradeStat(socket.id, stat)
+        if (!res.ok && res.msg) socket.emit('error', { msg: res.msg })
+      }
     })
 
-    socket.on('ant:recruit', ({ caste }) => {
+    // ── Evolve ant caste chosen ──────────────────────────────────────────────
+    socket.on('player:evolve', ({ className }) => {
       const room = rooms.getByPlayer(socket.id)
-      if (!room) return
-      const r = room.game.recruitAnt(socket.id, caste)
-      if (!r.ok) socket.emit('error', { msg:r.msg })
+      if (room) {
+        const res = room.game.evolvePlayer(socket.id, className)
+        if (!res.ok && res.msg) socket.emit('error', { msg: res.msg })
+      }
     })
 
     socket.on('chamber:build', ({ type, position }) => {
@@ -91,16 +90,6 @@ export function registerSocketHandlers(io) {
       if (!room) return
       const r = room.game.buildChamber(socket.id, type, position)
       if (!r.ok) socket.emit('error', { msg:r.msg })
-    })
-
-    socket.on('ants:attack', ({ antIds, targetId }) => {
-      if (cmdCount++ > 60) return
-      const room = rooms.getByPlayer(socket.id)
-      if (!room) return
-      for (const id of antIds) {
-        const kill = room.game.attack?.(socket.id, id, targetId)
-        if (kill) io.to(room.id).emit('kill:feed', kill)
-      }
     })
 
     socket.on('disconnect', async () => {
@@ -117,12 +106,20 @@ export function registerSocketHandlers(io) {
     })
   })
 
-  // Game tick 20Hz
+  // Game tick 20Hz (50ms interval)
   setInterval(() => {
     for (const room of rooms.all()) {
       if (!room.isPlaying()) continue
       const result = room.game.tick()
-      if (result?.changes) io.to(room.id).emit('state:delta', result.changes)
+      if (result?.changes) {
+        io.to(room.id).emit('state:delta', {
+          colonies: result.changes,
+          projectiles: result.projectiles,
+          foodShapes: result.foodShapes,
+          clouds: result.clouds,
+          predators: result.predators
+        })
+      }
       if (result?.kills?.length) {
         for (const kill of result.kills) io.to(room.id).emit('kill:feed', kill)
       }
@@ -136,6 +133,7 @@ export function registerSocketHandlers(io) {
     }
   }, 50)
 
+  // Day/night cycle ticker (1s interval)
   setInterval(() => {
     for (const room of rooms.all()) {
       if (!room.isPlaying()) continue

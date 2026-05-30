@@ -87,11 +87,11 @@ export function showLobby() {
 
         <div class="lobby-footer">
           <div class="feature-pills">
-            <span class="fpill">🧪 Pheromone trails</span>
-            <span class="fpill">🏗 Nest building</span>
-            <span class="fpill">🌙 Day/night cycle</span>
-            <span class="fpill">🐛 Predator events</span>
-            <span class="fpill">⚔️ 8 ant castes</span>
+            <span class="fpill">🧪 Pheromone Turf Speed</span>
+            <span class="fpill">🏗 Swarming Drone Nurseries</span>
+            <span class="fpill">🌙 Night Predator Bosses</span>
+            <span class="fpill">⚔️ 12 Evolved Ant Classes</span>
+            <span class="fpill">💥 Chemical Reactions</span>
           </div>
         </div>
 

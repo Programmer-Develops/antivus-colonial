@@ -1,35 +1,42 @@
-// ─── game/pheromoneLayer.js — GPU pheromone trail decay ──────────────────────
-// Each colony gets a RenderTexture. Each tick:
-//   1. Draw a faint black rect over it (= trail decay)
-//   2. Draw colored dots at each ant's position (= new trail)
-// Result: living trails that fade naturally over ~8 seconds.
+// ─── pheromoneLayer.js — GPU pheromone trails ────────────────────────────────
+// Draws colored dots at each ant's world position onto a per-colony
+// RenderTexture that slowly fades each frame. Scouts leave no trail.
 import * as PIXI from 'pixi.js'
 
-const DECAY_ALPHA = 0.008   // lower = trails last longer
-const DOT_RADIUS  = 4
+const MAP_PX     = 64 * 32   // 2048 — trail texture is world-sized, not screen-sized
+const MAP_PY     = 64 * 32
+const DOT_R      = 3
+const FADE_ALPHA = 0.006      // lower = longer trails
 
 export class PheromoneLayer {
   constructor(app, parent) {
     this.app       = app
     this.container = new PIXI.Container()
-    this.container.alpha = 0.7
-    parent.addChildAt(this.container, 0)
+    this.container.alpha = 0.65
+    // Pheromones sit above map but below ants
+    parent.addChildAt(this.container, 1)
 
-    this._textures = {}   // playerId → RenderTexture
-    this._sprites  = {}   // playerId → Sprite
-    this._g        = new PIXI.Graphics()
+    this._rt      = {}   // playerId → RenderTexture (world-sized)
+    this._sprite  = {}   // playerId → Sprite
+    this._dots    = new PIXI.Graphics()
+    this._fade    = new PIXI.Graphics()
+
+    // Pre-draw the fade rect at world size once
+    this._fade.rect(0, 0, MAP_PX, MAP_PY)
+      .fill({ color: 0x000000, alpha: FADE_ALPHA })
   }
 
-  _ensure(playerId) {
-    if (this._textures[playerId]) return
-    const { width, height } = this.app.screen
-    const rt = PIXI.RenderTexture.create({ width, height })
+  _ensure(pid) {
+    if (this._rt[pid]) return
 
-    const sprite = new PIXI.Sprite(rt)
-    sprite.blendMode = 'add'
-    this._textures[playerId] = rt
-    this._sprites[playerId]  = sprite
-    this.container.addChild(sprite)
+    // Create texture at WORLD size — it renders in world space
+    const rt = PIXI.RenderTexture.create({ width: MAP_PX, height: MAP_PY })
+    const sp = new PIXI.Sprite(rt)
+    sp.blendMode = 'add'
+
+    this._rt[pid]     = rt
+    this._sprite[pid] = sp
+    this.container.addChild(sp)
   }
 
   tick(delta, colonies) {
@@ -37,36 +44,34 @@ export class PheromoneLayer {
 
     for (const [pid, colony] of Object.entries(colonies)) {
       if (!colony?.ants || !colony?.color) continue
-      this._ensure(pid, colony.color)
+      this._ensure(pid)
 
-      const rt    = this._textures[pid]
-      const g     = this._g
+      const rt    = this._rt[pid]
       const color = parseInt(colony.color.replace('#', ''), 16)
 
-      // Fade existing trail
-      const fade = new PIXI.Graphics()
-        .rect(0, 0, rt.width, rt.height)
-        .fill({ color: 0x000000, alpha: DECAY_ALPHA * delta })
-      this.app.renderer.render({ container: fade, target: rt, clear: false })
+      // 1. Fade existing trails
+      this.app.renderer.render({ container: this._fade, target: rt, clear: false })
 
-      // Paint new dots at each ant position
-      g.clear()
+      // 2. Draw new dots at each ant's world position
+      this._dots.clear()
       for (const ant of Object.values(colony.ants)) {
         if (!ant?.position) continue
-        // Scouts leave no trail (stealth mechanic)
-        if (ant.caste === 'scout') continue
-        g.circle(ant.position.x, ant.position.y, DOT_RADIUS)
-         .fill({ color, alpha: 0.85 })
+        if (ant.caste === 'scout') continue  // scouts leave no trail
+        this._dots
+          .circle(ant.position.x, ant.position.y, DOT_R)
+          .fill({ color, alpha: 0.8 })
       }
-      this.app.renderer.render({ container: g, target: rt, clear: false })
+      this.app.renderer.render({ container: this._dots, target: rt, clear: false })
     }
-  }
 
-  // Call on window resize — recreate textures at new size
-  resize() {
-    for (const rt of Object.values(this._textures)) rt.destroy(true)
-    this._textures = {}
-    this.container.removeChildren()
-    this._sprites = {}
+    // Remove sprites for players who left
+    for (const pid of Object.keys(this._rt)) {
+      if (!colonies[pid]) {
+        this.container.removeChild(this._sprite[pid])
+        this._rt[pid].destroy(true)
+        delete this._rt[pid]
+        delete this._sprite[pid]
+      }
+    }
   }
 }

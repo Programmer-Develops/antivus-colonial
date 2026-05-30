@@ -1,17 +1,19 @@
-// ─── game/antSprites.js — Ant rendering with Graphics shapes ─────────────────
-// Uses PIXI.Graphics until real sprite assets are added.
-// Each caste has a distinct shape + size so they're readable at a glance.
+// ─── game/antSprites.js — Premium Shooter Ant Vector Rendering ───────────────
 import * as PIXI from 'pixi.js'
 
 const CASTE_CFG = {
-  queen:      { size: 14, shape: 'diamond' },
-  worker:     { size: 6,  shape: 'circle'  },
-  soldier:    { size: 10, shape: 'square'  },
-  scout:      { size: 5,  shape: 'triangle'},
-  builder:    { size: 7,  shape: 'circle'  },
-  ranger:     { size: 7,  shape: 'cross'   },
-  farmer:     { size: 6,  shape: 'circle'  },
-  bombardier: { size: 9,  shape: 'diamond' }
+  worker:     { size: 7.5, shape: 'circle'   },
+  soldier:    { size: 12.0,shape: 'square'   },
+  scout:      { size: 6.5, shape: 'triangle' },
+  ranger:     { size: 8.5, shape: 'cross'    },
+  farmer:     { size: 8.0, shape: 'circle'   },
+  bombardier: { size: 13.5,shape: 'diamond'  },
+  weaver:     { size: 10.5,shape: 'square'   },
+  bullet:     { size: 8.5, shape: 'triangle' },
+  stinkbug:   { size: 11.5,shape: 'circle'   },
+  acidgunner: { size: 10.0,shape: 'cross'    },
+  sniper:     { size: 8.0, shape: 'triangle' },
+  cultivator: { size: 10.0,shape: 'diamond'  }
 }
 
 export class AntSprites {
@@ -43,20 +45,30 @@ export class AntSprites {
 
         g.clear()
         const cfg = CASTE_CFG[ant.caste] ?? CASTE_CFG.worker
+
+        // Draw ant body
         this._drawShape(g, cfg.shape, cfg.size, colorNum)
 
-        // White ring for own colony
-        if (isMe) {
+        // Draw double rings around local player ant
+        if (isMe && ant.isPlayer) {
+          g.circle(0, 0, cfg.size + 3.5)
+           .stroke({ color: 0xffffff, width: 2.0, alpha: 0.78 })
+          g.circle(0, 0, cfg.size + 7.5)
+           .stroke({ color: colorNum, width: 1.0, alpha: 0.35 })
+        }
+
+        // Draw outline on follower AI mini-drones
+        if (!ant.isPlayer) {
           g.circle(0, 0, cfg.size + 2.5)
-           .stroke({ color: 0xffffff, width: 1.5, alpha: 0.6 })
+           .stroke({ color: colorNum, width: 1.2, alpha: 0.55 })
         }
 
         // HP bar for damaged ants
         if (ant.hp < ant.maxHp && ant.maxHp > 0) {
           const pct  = ant.hp / ant.maxHp
-          const barW = 14
+          const barW = cfg.size * 2.2
           g.rect(-barW/2, -(cfg.size + 7), barW, 3)
-           .fill({ color: 0x333333 })
+           .fill({ color: 0x222222 })
           g.rect(-barW/2, -(cfg.size + 7), barW * pct, 3)
            .fill({ color: pct > 0.5 ? 0x4ade80 : pct > 0.25 ? 0xf59e0b : 0xef4444 })
         }
@@ -81,13 +93,13 @@ export class AntSprites {
         g.circle(0, 0, size).fill({ color })
         break
       case 'diamond':
-        g.poly([0,-size, size,0, 0,size, -size,0]).fill({ color })
+        g.poly([0,-size * 1.2, size,0, 0,size * 1.2, -size,0]).fill({ color })
         break
       case 'square':
         g.rect(-size/2, -size/2, size, size).fill({ color })
         break
       case 'triangle':
-        g.poly([0,-size, size,size/1.5, -size,size/1.5]).fill({ color })
+        g.poly([0,-size * 1.2, size,size * 0.8, -size,size * 0.8]).fill({ color })
         break
       case 'cross': {
         const t = size * 0.35

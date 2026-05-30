@@ -25,21 +25,37 @@ export function initSocket() {
 
   socket.on('error', ({ msg }) => showToast(msg, 'error'))
 
-  socket.on('state:full', ({ colonies }) => {
+  socket.on('state:full', ({ colonies, projectiles, foodShapes, clouds, predators }) => {
     store.setColonies(colonies)
     const mine = colonies[socket.id]
     if (mine) store.updateColony(mine)
+    useGameStore.setState({
+      projectiles: projectiles || [],
+      foodShapes: foodShapes || [],
+      clouds: clouds || [],
+      predators: predators || []
+    })
   })
 
-  socket.on('state:delta', (all) => {
-    store.setColonies(all)
-    const mine = all[socket.id]
-    if (mine) { store.updateColony(mine); store.updateResources(mine.resources) }
+  socket.on('state:delta', (delta) => {
+    const colonies = delta.colonies || delta
+    store.setColonies(colonies)
+    const mine = colonies[socket.id]
+    if (mine) {
+      store.updateColony(mine)
+      store.updateResources(mine.resources)
+    }
+    useGameStore.setState({
+      projectiles: delta.projectiles || [],
+      foodShapes: delta.foodShapes || [],
+      clouds: delta.clouds || [],
+      predators: delta.predators || []
+    })
   })
 
   socket.on('day:cycle', ({ phase }) => {
     store.setDayCycle(phase)
-    showToast(phase === 'night' ? '🌙 Night falls...' : '☀️ Dawn breaks', 'info')
+    showToast(phase === 'night' ? '🌙 Night falls! Apex Predators emerge!' : '☀️ Dawn breaks. Predators retreat.', 'info')
   })
 
   socket.on('kill:feed', (e) => store.addKill(e))
@@ -60,7 +76,12 @@ export const emit = {
   recruitAnt:   (caste)           => socket?.emit('ant:recruit', { caste }),
   buildChamber: (type, position)  => socket?.emit('chamber:build', { type, position }),
   attackTarget: (antIds, tid)     => socket?.emit('ants:attack', { antIds, targetId: tid }),
-  sendChat:     (msg)             => socket?.emit('chat', { msg })
+  sendChat:     (msg)             => socket?.emit('chat', { msg }),
+
+  // ── Arras.io client emits ─────────────────────────────────────────────────
+  sendPlayerInput: (input)        => socket?.emit('player:input', input),
+  upgradeStat:     (stat)         => socket?.emit('player:upgrade-stat', { stat }),
+  evolve:          (className)    => socket?.emit('player:evolve', { className })
 }
 
 export function getSocket() { return socket }

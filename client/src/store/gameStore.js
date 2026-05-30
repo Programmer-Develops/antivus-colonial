@@ -14,10 +14,18 @@ export const useGameStore = createStore((set) => ({
   setMyName: (name) => set({ myName: name }),
 
   colony: {
-    queenAlive: true, ants: {},
-    resources: { leaf:50, fungus:0, honeydew:0, carapace:0 },
-    chambers: {}, morale: 100, color: '#4ade80',
-    territory: null, effects: null, name: ''
+    color: '#4ade80',
+    name: '',
+    xp: 0,
+    level: 1,
+    upgradePoints: 0,
+    class: 'worker',
+    stats: { regen:0, maxHp:0, speed:0, damage:0, bulletSpeed:0, reload:0 },
+    resources: { leaf:0, fungus:0, honeydew:0, carapace:0 },
+    chambers: {},
+    territory: null,
+    ants: {},
+    activeSkillCooldown: 0
   },
   updateColony:    (patch) => set(s => ({ colony: { ...s.colony, ...patch } })),
   updateResources: (res)   => set(s => ({
@@ -36,10 +44,15 @@ export const useGameStore = createStore((set) => ({
   setMap:      (seed)  => set({ mapSeed: seed }),
   setDayCycle: (phase) => set({ dayPhase: phase, dayTimer: 240 }),
 
+  // Arras.io lists
+  projectiles: [],
+  foodShapes: [],
+  clouds: [],
+  predators: [],
+
   selectedAntIds: [],
   setSelection: (ids) => set({ selectedAntIds: ids }),
 
-  // Chamber placement mode — stores the type being placed, or null
   placingChamber: null,
   setPlacingChamber: (type) => set({ placingChamber: type }),
 
