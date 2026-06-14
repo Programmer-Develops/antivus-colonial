@@ -32,6 +32,7 @@ export class AntSprites {
       const isMe     = pid === myId
       const colorHex = colony.color || '#888888'
       const colorNum = parseInt(colorHex.replace('#', ''), 16)
+      const invul    = colony.invulnerableTimer > 0
 
       for (const [antId, ant] of Object.entries(colony.ants)) {
         alive.add(antId)
@@ -55,6 +56,14 @@ export class AntSprites {
            .stroke({ color: 0xffffff, width: 2.0, alpha: 0.78 })
           g.circle(0, 0, cfg.size + 7.5)
            .stroke({ color: colorNum, width: 1.0, alpha: 0.35 })
+        }
+
+        // Draw pulsing gold shield ring around player if invulnerable
+        if (ant.isPlayer && invul) {
+          const time = Date.now() * 0.015
+          const pulseR = cfg.size + 10 + Math.sin(time) * 3
+          g.circle(0, 0, pulseR)
+           .stroke({ color: 0xfacc15, width: 2.2, alpha: 0.85 })
         }
 
         // Draw outline on follower AI mini-drones

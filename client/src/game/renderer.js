@@ -45,7 +45,7 @@ export async function initRenderer(container) {
   const mapLayer       = new MapLayer(app, camera)
   const pheromoneLayer = new PheromoneLayer(app, camera)
 
-  // Shooter graphic layers (drawn above turf but below ants)
+  // Shooter graphic layers
   cloudGfx = new PIXI.Graphics()
   camera.addChild(cloudGfx)
 
@@ -108,34 +108,25 @@ export async function initRenderer(container) {
 
   initInput(app, camera)
 
-  // ── Boot sequence ──────────────────────────────────────────────────────────
-  useGameStore.subscribe(
-    (s) => s.mapSeed,
-    (seed) => {
-      if (!seed) return
+  // ── Correct Vanilla Zustand State Subscription Boot sequence ──────────────────────────
+  useGameStore.subscribe((state) => {
+    const seed = state.mapSeed
+    if (seed && !_mapReady) {
       console.log('[renderer] generating map seed:', seed)
       mapLayer.generate(seed)
       _mapReady = true
       _tryCenterCamera()
     }
-  )
 
-  useGameStore.subscribe(
-    (s) => s.colonies,
-    (colonies) => {
-      const { myId } = useGameStore.getState()
-      if (!myId || !colonies[myId]) return
+    const { colonies, myId } = state
+    if (myId && colonies[myId]) {
       const playerAnt = colonies[myId].ants?.[myId]
-      if (!playerAnt) return
-      _playerPos = { ...playerAnt.position }
-      _tryCenterCamera()
+      if (playerAnt && playerAnt.position) {
+        _playerPos = { ...playerAnt.position }
+        _tryCenterCamera()
+      }
     }
-  )
-
-  useGameStore.subscribe(
-    (s) => s.myId,
-    () => _tryCenterCamera()
-  )
+  })
 
   // ── Main game render loop ──────────────────────────────────────────────────
   app.ticker.add((ticker) => {
@@ -187,16 +178,24 @@ function _updateCameraFollow(colonies, myId) {
   const targetX = app.screen.width / 2 - playerAnt.position.x * z
   const targetY = app.screen.height / 2 - playerAnt.position.y * z
 
-  // Interpolate camera coordinates smoothly (10% step per frame)
   camera.x += (targetX - camera.x) * 0.1
   camera.y += (targetY - camera.y) * 0.1
 
-  // Clamp camera so it doesn't pan past world boundaries
-  const mapSizePx = 64 * 32
+  const mapSizePx = 2048
   const minCX = app.screen.width - mapSizePx * z
   const minCY = app.screen.height - mapSizePx * z
-  camera.x = Math.min(0, Math.max(minCX, camera.x))
-  camera.y = Math.min(0, Math.max(minCY, camera.y))
+
+  if (app.screen.width > mapSizePx * z) {
+    camera.x = (app.screen.width - mapSizePx * z) / 2
+  } else {
+    camera.x = Math.min(0, Math.max(minCX, camera.x))
+  }
+
+  if (app.screen.height > mapSizePx * z) {
+    camera.y = (app.screen.height - mapSizePx * z) / 2
+  } else {
+    camera.y = Math.min(0, Math.max(minCY, camera.y))
+  }
 }
 
 // ── Render Chemical Projectiles ──────────────────────────────────────────────
@@ -211,7 +210,6 @@ function drawProjectiles(projectiles) {
 
     projectileGfx.circle(p.x, p.y, r).fill({ color: col })
 
-    // Draw glowing motion trail vector
     const angle = Math.atan2(p.vy, p.vx)
     projectileGfx.moveTo(p.x, p.y)
       .lineTo(p.x - Math.cos(angle) * 14, p.y - Math.sin(angle) * 14)
@@ -227,16 +225,17 @@ function drawFoodShapes(shapes) {
     const x = sh.x, y = sh.y, size = sh.size
     sh.rotation = (sh.rotation || 0) + (sh.rotSpeed || 0.01)
 
-    // Draw procedural shapes
-    if (sh.type === 'leaf') {
-      // Rotating Leaf Triangle
+    if (sh.type === 'glow-orb') {
+      const pulse = Math.sin(Date.now() * 0.008 + sh.x * 0.05) * 2.2
+      foodGfx.circle(x, y, size + 4.5 + pulse).stroke({ color: col, width: 1.5, alpha: 0.65 })
+      foodGfx.circle(x, y, size + pulse).fill({ color: col, alpha: 0.9 })
+    } else if (sh.type === 'leaf') {
       foodGfx.poly([
         x + Math.cos(sh.rotation) * size, y + Math.sin(sh.rotation) * size,
         x + Math.cos(sh.rotation + Math.PI * 2 / 3) * size, y + Math.sin(sh.rotation + Math.PI * 2 / 3) * size,
         x + Math.cos(sh.rotation + Math.PI * 4 / 3) * size, y + Math.sin(sh.rotation + Math.PI * 4 / 3) * size
       ]).fill({ color: col }).stroke({ color: 0xffffff, width: 0.8, alpha: 0.3 })
     } else if (sh.type === 'sugar') {
-      // Rotating Sugar Square
       foodGfx.poly([
         x + Math.cos(sh.rotation) * size, y + Math.sin(sh.rotation) * size,
         x + Math.cos(sh.rotation + Math.PI / 2) * size, y + Math.sin(sh.rotation + Math.PI / 2) * size,
@@ -244,7 +243,6 @@ function drawFoodShapes(shapes) {
         x + Math.cos(sh.rotation + Math.PI * 3 / 2) * size, y + Math.sin(sh.rotation + Math.PI * 3 / 2) * size
       ]).fill({ color: col }).stroke({ color: 0xffffff, width: 0.8, alpha: 0.3 })
     } else {
-      // Blue Carapace Hexagon
       const points = []
       for (let i = 0; i < 6; i++) {
         points.push(x + Math.cos(sh.rotation + i * Math.PI / 3) * size)
@@ -253,7 +251,6 @@ function drawFoodShapes(shapes) {
       foodGfx.poly(points).fill({ color: col }).stroke({ color: 0xffffff, width: 1.2, alpha: 0.4 })
     }
 
-    // Floating HP bar for damaged shapes
     if (sh.hp < sh.maxHp) {
       const pct = sh.hp / sh.maxHp, bw = size * 2.2
       foodGfx.rect(x - bw/2, y - size - 8, bw, 3).fill({ color: 0x111111 })
@@ -266,13 +263,12 @@ function drawFoodShapes(shapes) {
 function drawChemicalClouds(clouds) {
   cloudGfx.clear()
   for (const c of clouds || []) {
-    let col = 0x4ade80 // green corrosive mist
+    let col = 0x4ade80
     let alpha = 0.16
-    if (c.type === 'poison') { col = 0xa78bfa; alpha = 0.18 } // poison purple
-    if (c.type === 'silk') { col = 0xe8e6d9; alpha = 0.22 } // spider web white
-    if (c.type === 'silk-acid') { col = 0xfacc15; alpha = 0.20 } // orange corrosive
+    if (c.type === 'poison') { col = 0xa78bfa; alpha = 0.18 }
+    if (c.type === 'silk') { col = 0xe8e6d9; alpha = 0.22 }
+    if (c.type === 'silk-acid') { col = 0xfacc15; alpha = 0.20 }
 
-    // Inner glowing cloud core
     cloudGfx.circle(c.x, c.y, c.radius).fill({ color: col, alpha })
     cloudGfx.circle(c.x, c.y, c.radius * 0.65).fill({ color: col, alpha: alpha * 0.6 })
     cloudGfx.circle(c.x, c.y, c.radius).stroke({ color: col, width: 1.5, alpha: alpha * 2.2 })
@@ -287,11 +283,9 @@ function drawPredators(predators) {
     const isBoss = p.name.includes('APEX')
     const col = isBoss ? 0xef4444 : 0xf97316
 
-    // Glowing predator core body
     predatorGfx.circle(x, y, size).fill({ color: col, alpha: 0.88 })
     predatorGfx.circle(x, y, size + 5).stroke({ color: col, width: 2.5, alpha: 0.5 })
 
-    // Animated eight spider legs!
     const legLen = size * 1.65
     const time = Date.now() * 0.016
     for (let i = 0; i < 8; i++) {
@@ -301,13 +295,22 @@ function drawPredators(predators) {
         .stroke({ color: col, width: isBoss ? 3.5 : 2.0, alpha: 0.45 })
     }
 
-    // Apex Boss Red glowing eye highlights
     if (isBoss) {
       predatorGfx.circle(x - 5, y - 6, 3).fill({ color: 0xffffff })
       predatorGfx.circle(x + 5, y - 6, 3).fill({ color: 0xffffff })
     }
 
-    // Health bar
+    if (p.chasing) {
+      // Exclamation alert warning drawn above head
+      const warnY = y - size - 20
+      predatorGfx.rect(x - 1.8, warnY - 11, 3.6, 7.5).fill({ color: 0xef4444 })
+      predatorGfx.circle(x, warnY - 1.5, 1.8).fill({ color: 0xef4444 })
+
+      // Pulsing red danger indicator ring
+      const pulseRing = size + 7 + Math.sin(Date.now() * 0.018) * 3.5
+      predatorGfx.circle(x, y, pulseRing).stroke({ color: 0xef4444, width: 1.8, alpha: 0.85 })
+    }
+
     const pct = p.hp / p.maxHp, bw = size * 2.6
     predatorGfx.rect(x - bw/2, y - size - 14, bw, 4).fill({ color: 0x111111 })
     predatorGfx.rect(x - bw/2, y - size - 14, bw * pct, 4).fill({ color: 0xef4444 })

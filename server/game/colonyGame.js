@@ -12,15 +12,12 @@ const SPAWN_POSITIONS = [
 ]
 
 // ── Ant Class Attributes ───────────────────────────────────────────────────────
-// HP, Max HP, Core Speed, Core Damage, Bullet Speed, Core Reload (ticks), Bullet Lifetime (ticks), Projectile Type
 export const CASTE_DEFS = {
   worker:     { hp:100, speed:3.2, damage:12,  bulletSpeed:6,  reload:10, range:60,  type:'acid'      },
-  // Tier 2
   soldier:    { hp:180, speed:2.5, damage:24,  bulletSpeed:5,  reload:18, range:45,  type:'heavy'     },
   scout:      { hp:90,  speed:4.5, damage:8,   bulletSpeed:9,  reload:6,  range:80,  type:'needle'    },
   ranger:     { hp:110, speed:3.0, damage:16,  bulletSpeed:7,  reload:11, range:100, type:'acid'      },
   farmer:     { hp:120, speed:2.8, damage:10,  bulletSpeed:5.5,reload:12, range:70,  type:'honeydew'  },
-  // Tier 3
   bombardier: { hp:240, speed:2.0, damage:45,  bulletSpeed:4.5,reload:25, range:50,  type:'explosive' },
   weaver:     { hp:200, speed:2.4, damage:18,  bulletSpeed:6,  reload:14, range:60,  type:'silk'      },
   bullet:     { hp:120, speed:5.0, damage:35,  bulletSpeed:12, reload:22, range:120, type:'stinger'   },
@@ -30,7 +27,6 @@ export const CASTE_DEFS = {
   cultivator: { hp:150, speed:2.8, damage:12,  bulletSpeed:6,  reload:12, range:75,  type:'spores'    }
 }
 
-// ── Deployable Chamber Defs ───────────────────────────────────────────────────
 const CHAMBER_DEF = {
   barracks: { cost:40, hp:350, desc:'Shield Wall - deals body acid contact damage' },
   tunnel:   { cost:30, hp:180, desc:'Defensive speed booster and automated turret' },
@@ -50,9 +46,8 @@ export class ColonyGame {
     this.dayPhase    = 'day'
     this._colorIdx   = 0
     this._maxPlayers = 0
-
-    // Pheromone turf grid (64x64 tiles)
-    this.turfGrid = Array(64 * 64).fill(null)
+    this.turfGrid    = Array(64 * 64).fill(null)
+    this.foodSpawnTimer = 0
   }
 
   // ── Colony lifecycle ────────────────────────────────────────────────────────
@@ -68,30 +63,38 @@ export class ColonyGame {
       level: 1,
       upgradePoints: 0,
       class: 'worker',
-      stats: {
-        regen: 0,       // max 7
-        maxHp: 0,       // max 7
-        speed: 0,       // max 7
-        damage: 0,      // max 7
-        bulletSpeed: 0, // max 7
-        reload: 0       // max 7
-      },
+      stats: { regen: 0, maxHp: 0, speed: 0, damage: 0, bulletSpeed: 0, reload: 0 },
       resources: { leaf: 20, fungus: 0, honeydew: 0, carapace: 0 },
       chambers: {},
       territory: { center: { ...pos }, radius: 180 },
-      ants: {}, // ants[pid] is the player, ants[droneId] are friendly swarms
+      ants: {},
       activeSkillCooldown: 0,
-      input: { keys: {}, mx: pos.x, my: pos.y, firing: false }
+      input: { keys: {}, mx: pos.x, my: pos.y, firing: false },
+
+      // Life & Relations System
+      lives: 3,
+      respawnTimer: 0,
+      invulnerableTimer: 0,
+      relations: {} // relations[otherPid] = 'neutral' | 'enemy' | 'ally'
     }
 
-    // Spawn player ant
     colony.ants[playerId] = this._makePlayerAnt(playerId, 'worker', pos)
-
     this.colonies.set(playerId, colony)
-    if (this.colonies.size > this._maxPlayers) this._maxPlayers = this.colonies.size
 
-    // Initial shape spawn
-    this._maintainFoodShapes()
+    // Pre-populate relationship arrays for other players
+    for (const [otherPid, otherColony] of this.colonies) {
+      if (otherPid !== playerId) {
+        colony.relations[otherPid] = 'neutral'
+        otherColony.relations[playerId] = 'neutral'
+      }
+    }
+
+    if (this.colonies.size > this._maxPlayers) this._maxPlayers = this.colonies.size
+    if (this.foodShapes.length === 0) {
+      this._maintainFoodShapes(true)
+    } else {
+      this._maintainFoodShapes(false)
+    }
   }
 
   _makePlayerAnt(id, caste, pos) {
@@ -127,8 +130,37 @@ export class ColonyGame {
 
   removeColony(pid) {
     this.colonies.delete(pid)
-    // Clear projectiles belonging to player
     this.projectiles = this.projectiles.filter(p => p.ownerId !== pid)
+    for (const col of this.colonies.values()) {
+      delete col.relations[pid]
+    }
+  }
+
+  // ── Diplomacy Methods ───────────────────────────────────────────────────────
+  declareWar(pid, targetId) {
+    const colA = this.colonies.get(pid)
+    const colB = this.colonies.get(targetId)
+    if (colA && colB) {
+      colA.relations[targetId] = 'enemy'
+      colB.relations[pid] = 'enemy'
+      return { ok: true, nameA: colA.name, nameB: colB.name }
+    }
+    return { ok: false }
+  }
+
+  breakAlliance(pid, targetId) {
+    return this.declareWar(pid, targetId)
+  }
+
+  setAlliance(pid, targetId) {
+    const colA = this.colonies.get(pid)
+    const colB = this.colonies.get(targetId)
+    if (colA && colB) {
+      colA.relations[targetId] = 'ally'
+      colB.relations[pid] = 'ally'
+      return { ok: true, nameA: colA.name, nameB: colB.name }
+    }
+    return { ok: false }
   }
 
   // ── Input receiver ──────────────────────────────────────────────────────────
@@ -153,15 +185,13 @@ export class ColonyGame {
     colony.stats[statName]++
     colony.upgradePoints--
 
-    // Reapply max HP changes immediately
     const playerAnt = colony.ants[pid]
     if (playerAnt) {
       const baseHp = CASTE_DEFS[colony.class].hp
       const oldMax = playerAnt.maxHp
       playerAnt.maxHp = baseHp + colony.stats.maxHp * 20
-      playerAnt.hp += (playerAnt.maxHp - oldMax) // keep current HP scaling
+      playerAnt.hp += (playerAnt.maxHp - oldMax)
     }
-
     return { ok: true }
   }
 
@@ -172,7 +202,6 @@ export class ColonyGame {
     const curLevel = colony.level
     const curClass = colony.class
 
-    // Evolve validation
     let allowed = false
     if (curLevel >= 5 && curLevel < 15 && curClass === 'worker') {
       allowed = ['soldier', 'scout', 'ranger', 'farmer'].includes(className)
@@ -193,7 +222,6 @@ export class ColonyGame {
       playerAnt.maxHp = CASTE_DEFS[className].hp + colony.stats.maxHp * 20
       playerAnt.hp = Math.min(playerAnt.maxHp, playerAnt.hp + (playerAnt.maxHp - oldMax))
     }
-
     return { ok: true }
   }
 
@@ -204,7 +232,6 @@ export class ColonyGame {
     const def = CHAMBER_DEF[type]
     if (!def) return { ok: false, msg: 'Unknown nest chamber type' }
 
-    // Must be inside own territory
     const tc = colony.territory.center
     const dist = Math.hypot(position.x - tc.x, position.y - tc.y)
     if (dist > colony.territory.radius)
@@ -225,27 +252,31 @@ export class ColonyGame {
       spawnTimer: 0
     }
 
-    // Expand territory a bit on new chamber
     colony.territory.radius = Math.min(320, colony.territory.radius + 15)
-
     return { ok: true, chamberId: id }
   }
 
-  // ── Unified tick loop (20Hz) ────────────────────────────────────────────────
+  // ── Unified tick loop ───────────────────────────────────────────────────────
   tick() {
     const kills = []
 
+    this._tickRespawns()
     this._tickPlayerWASD()
-    this._tickSwarms()
+    this._tickSwarms(kills)
     this._tickProjectiles(kills)
     this._tickPredators(kills)
     this._tickChambers()
     this._tickPheromoneDeposition()
     this._tickRegen()
     this._tickClouds()
-    this._maintainFoodShapes()
+    this._tickFoodDrift()
 
-    // Package the complete room state delta
+    this.foodSpawnTimer++
+    if (this.foodSpawnTimer >= 40) {
+      this.foodSpawnTimer = 0
+      this._maintainFoodShapes(false)
+    }
+
     const changes = {}
     for (const [pid, colony] of this.colonies) {
       changes[pid] = {
@@ -260,7 +291,13 @@ export class ColonyGame {
         chambers: colony.chambers,
         territory: colony.territory,
         ants: colony.ants,
-        activeSkillCooldown: colony.activeSkillCooldown
+        activeSkillCooldown: colony.activeSkillCooldown,
+
+        // Life & relations sync
+        lives: colony.lives,
+        respawnTimer: colony.respawnTimer,
+        invulnerableTimer: colony.invulnerableTimer,
+        relations: colony.relations
       }
     }
 
@@ -274,6 +311,22 @@ export class ColonyGame {
     }
   }
 
+  // ── Respawning TICK ──────────────────────────────────────────────────────────
+  _tickRespawns() {
+    for (const [pid, colony] of this.colonies) {
+      if (colony.respawnTimer > 0) {
+        colony.respawnTimer--
+        if (colony.respawnTimer === 0 && colony.lives > 0) {
+          // Respawn player back at nest center!
+          const pos = { ...colony.territory.center }
+          colony.ants[pid] = this._makePlayerAnt(pid, colony.class, pos)
+          colony.invulnerableTimer = 50 // 2.5 seconds invulnerability
+        }
+      }
+      if (colony.invulnerableTimer > 0) colony.invulnerableTimer--
+    }
+  }
+
   // ── Player direct movement (WASD) ──────────────────────────────────────────
   _tickPlayerWASD() {
     for (const [pid, colony] of this.colonies) {
@@ -283,20 +336,17 @@ export class ColonyGame {
       const cfg = CASTE_DEFS[colony.class]
       let speed = cfg.speed + colony.stats.speed * 0.35
 
-      // Skill Cooldown Tick
+      // Skill Cooldown
       if (colony.activeSkillCooldown > 0) colony.activeSkillCooldown--
 
-      // Splatoon-style Pheromone turf effect
+      // Splatoon turf speed modifiers
       const currentTileX = Math.floor(pAnt.position.x / TILE)
       const currentTileY = Math.floor(pAnt.position.y / TILE)
       if (currentTileX >= 0 && currentTileX < 64 && currentTileY >= 0 && currentTileY < 64) {
         const turf = this.turfGrid[currentTileY * 64 + currentTileX]
         if (turf) {
-          if (turf === pid) {
-            speed *= 1.35 // +35% friendly speed
-          } else {
-            speed *= 0.75 // -25% enemy slow
-          }
+          if (turf === pid) speed *= 1.35
+          else speed *= 0.75
         }
       }
 
@@ -308,18 +358,16 @@ export class ColonyGame {
       if (k.a || k.A || k.ArrowLeft)  dx -= 1
       if (k.d || k.D || k.ArrowRight) dx += 1
 
-      // Handle Shift Active Skill: Dash (Scouts/Bullet ants)
+      // Dash Active Skill
       if (colony.input.activeSkill && colony.activeSkillCooldown === 0) {
         if (['scout', 'bullet', 'stinkbug'].includes(colony.class)) {
-          colony.activeSkillCooldown = 60 // 3 seconds
-          // Instantly dash forward in movement direction
+          colony.activeSkillCooldown = 60
           const angle = Math.atan2(dy || (colony.input.my - pAnt.position.y), dx || (colony.input.mx - pAnt.position.x))
           pAnt.position.x += Math.cos(angle) * 120
           pAnt.position.y += Math.sin(angle) * 120
           pAnt.position.x = Math.max(16, Math.min(MAP_SIZE - 16, pAnt.position.x))
           pAnt.position.y = Math.max(16, Math.min(MAP_SIZE - 16, pAnt.position.y))
 
-          // Stinkbug dash releases defensive poison cloud trail
           if (colony.class === 'stinkbug') {
             this.clouds.push({
               id: uuid(),
@@ -334,20 +382,15 @@ export class ColonyGame {
         }
       }
 
-      // Standard movement vector
       if (dx !== 0 || dy !== 0) {
         const len = Math.hypot(dx, dy)
         pAnt.position.x += (dx / len) * speed
         pAnt.position.y += (dy / len) * speed
-
-        // Clamp inside map limits
         pAnt.position.x = Math.max(16, Math.min(MAP_SIZE - 16, pAnt.position.x))
         pAnt.position.y = Math.max(16, Math.min(MAP_SIZE - 16, pAnt.position.y))
       }
 
-      // ── Attack Fire Rate & Trigger ──────────────────────────────────────────
       if (pAnt.attackCooldown > 0) pAnt.attackCooldown--
-
       if (colony.input.firing && pAnt.attackCooldown === 0) {
         this._fireProjectile(pid, colony, pAnt)
       }
@@ -359,7 +402,6 @@ export class ColonyGame {
     const bSpeed = cfg.bulletSpeed + colony.stats.bulletSpeed * 0.8
     const bDamage = cfg.damage + colony.stats.damage * 4
 
-    // Aim toward mouse
     const ang = Math.atan2(colony.input.my - pAnt.position.y, colony.input.mx - pAnt.position.x)
     const baseCooldown = cfg.reload - Math.min(cfg.reload - 3, colony.stats.reload * 1.2)
     pAnt.attackCooldown = Math.max(2, Math.floor(baseCooldown))
@@ -368,7 +410,6 @@ export class ColonyGame {
     const vy = Math.sin(ang) * bSpeed
 
     if (cfg.type === 'triple') {
-      // Acid gunner fires 3 spread acid drops
       for (let s = -1; s <= 1; s++) {
         const spreadAng = ang + s * 0.18
         this.projectiles.push({
@@ -399,14 +440,10 @@ export class ColonyGame {
     }
   }
 
-  // ── Dynamic Splatoon-style Pheromone turf deposition ─────────────────────────
   _tickPheromoneDeposition() {
     for (const [pid, colony] of this.colonies) {
       const pAnt = colony.ants[pid]
-      if (!pAnt) continue
-
-      // Scouts deposit no trail
-      if (colony.class === 'scout') continue
+      if (!pAnt || colony.class === 'scout') continue
 
       const tx = Math.floor(pAnt.position.x / TILE)
       const ty = Math.floor(pAnt.position.y / TILE)
@@ -416,8 +453,8 @@ export class ColonyGame {
     }
   }
 
-  // ── Swarming Drone follower mini-ants (Nursery mechanics) ───────────────────
-  _tickSwarms() {
+  // ── Swarming Drone followers (Swarms) ──────────────────────────────────────
+  _tickSwarms(kills) {
     for (const [pid, colony] of this.colonies) {
       const playerAnt = colony.ants[pid]
       if (!playerAnt) continue
@@ -425,27 +462,29 @@ export class ColonyGame {
       for (const [antId, ant] of Object.entries(colony.ants)) {
         if (ant.isPlayer) continue
 
-        // Tick attack cooldown
         if (ant.attackCooldown > 0) ant.attackCooldown--
 
-        // AI drone logic: stay close to player, swarm target enemies or food shapes
         const distToPlayer = Math.hypot(ant.position.x - playerAnt.position.x, ant.position.y - playerAnt.position.y)
 
-        // Find nearest threat/food in vicinity
+        // Target seeking
         let bestTarget = null
-        let bestDist = 180
+        let bestDist = 200
 
-        // Check enemy players
+        // 1. Prioritize attacking marked enemy players and their drones
         for (const [otherPid, otherColony] of this.colonies) {
           if (otherPid === pid) continue
-          const enemyAnt = otherColony.ants[otherPid]
-          if (enemyAnt) {
+          
+          // DO NOT swarm friendly allies!
+          const rel = colony.relations[otherPid] || 'neutral'
+          if (rel === 'ally') continue
+
+          for (const enemyAnt of Object.values(otherColony.ants)) {
             const d = Math.hypot(ant.position.x - enemyAnt.position.x, ant.position.y - enemyAnt.position.y)
             if (d < bestDist) { bestDist = d; bestTarget = enemyAnt }
           }
         }
 
-        // Check food shapes
+        // 2. Target food shapes if no active enemy player around
         if (!bestTarget) {
           for (const shape of this.foodShapes) {
             const d = Math.hypot(ant.position.x - shape.x, ant.position.y - shape.y)
@@ -454,27 +493,53 @@ export class ColonyGame {
         }
 
         if (bestTarget) {
-          // Attack or move to target
           const dx = bestTarget.x ?? bestTarget.position.x
           const dy = bestTarget.y ?? bestTarget.position.y
           const ang = Math.atan2(dy - ant.position.y, dx - ant.position.x)
 
-          if (bestDist < 35 && ant.attackCooldown === 0) {
+          if (bestDist < 30 && ant.attackCooldown === 0) {
             // Melee bite
             bestTarget.hp -= 8
             ant.attackCooldown = 15
+
+            // CHECK BITE DESTRUCTION TARGET CLEANUP!
+            if (bestTarget.hp <= 0) {
+              if (bestTarget.type) {
+                // Destroy food shape
+                this._awardXP(pid, bestTarget.xpValue)
+                this._awardResources(pid, bestTarget.type)
+                this.foodShapes = this.foodShapes.filter(s => s.id !== bestTarget.id)
+              } else if (bestTarget.isPlayer) {
+                // Slew enemy player ant
+                kills.push({
+                  text: `${colony.name}'s Swarm Drone slew ${this.colonies.get(bestTarget.id)?.name || 'An enemy'}!`,
+                  attacker: pid,
+                  victim: bestTarget.id
+                })
+                const enemyCol = this.colonies.get(bestTarget.id)
+                if (enemyCol) {
+                  enemyCol.lives--
+                  enemyCol.respawnTimer = 60
+                  delete enemyCol.ants[bestTarget.id]
+                }
+              } else {
+                // Destroy enemy drone
+                for (const col of this.colonies.values()) {
+                  if (col.ants[bestTarget.id]) delete col.ants[bestTarget.id]
+                }
+              }
+              bestTarget = null
+            }
           } else {
-            // Fly toward
+            // Move toward
             ant.position.x += Math.cos(ang) * 3
             ant.position.y += Math.sin(ang) * 3
           }
         } else if (distToPlayer > 80) {
-          // Return to player ant
           const ang = Math.atan2(playerAnt.position.y - ant.position.y, playerAnt.position.x - ant.position.x)
           ant.position.x += Math.cos(ang) * 3.5
           ant.position.y += Math.sin(ang) * 3.5
         } else {
-          // Orbit/wander
           const ang = Date.now() * 0.003 + antId.charCodeAt(0)
           const rx = playerAnt.position.x + Math.cos(ang) * 45
           const ry = playerAnt.position.y + Math.sin(ang) * 45
@@ -487,54 +552,86 @@ export class ColonyGame {
 
   // ── Projectile Simulation & Reaction Checks ──────────────────────────────────
   _tickProjectiles(kills) {
-    const speedScale = 1
     const active = []
 
     for (const p of this.projectiles) {
-      p.x += p.vx * speedScale
-      p.y += p.vy * speedScale
+      p.x += p.vx
+      p.y += p.vy
       p.life--
 
-      // Collision checks
       let hit = false
+      const colony = this.colonies.get(p.ownerId)
+      if (!colony) continue
 
-      // Check hits against enemy player ants
+      // Ingest alliance relations checks
       for (const [enemyPid, enemyColony] of this.colonies) {
         if (enemyPid === p.ownerId) continue
-        const enemyAnt = enemyColony.ants[enemyPid]
-        if (enemyAnt) {
+
+        const relation = colony.relations[enemyPid] || 'neutral'
+        if (relation === 'ally') {
+          // If Farmer heals allies
+          if (p.type === 'honeydew' || p.type === 'spores') {
+            const enemyAnt = enemyColony.ants[enemyPid]
+            if (enemyAnt) {
+              const d = Math.hypot(p.x - enemyAnt.position.x, p.y - enemyAnt.position.y)
+              if (d < 20) {
+                enemyAnt.hp = Math.min(enemyAnt.maxHp, enemyAnt.hp + p.damage * 0.5)
+                hit = true
+                break
+              }
+            }
+          }
+          continue // ignore bullet damage
+        }
+
+        // Deal bullet damage to active enemy player + their swarms
+        for (const enemyAnt of Object.values(enemyColony.ants)) {
           const d = Math.hypot(p.x - enemyAnt.position.x, p.y - enemyAnt.position.y)
-          if (d < 20) {
+          const size = enemyAnt.isPlayer ? 20 : 10
+          if (d < size) {
+            // Ignore if player is currently invulnerable
+            if (enemyAnt.isPlayer && enemyColony.invulnerableTimer > 0) {
+              hit = true
+              break
+            }
+
             enemyAnt.hp -= p.damage
             hit = true
 
-            // Trigger Bombardier blast
             if (p.type === 'explosive') {
               this._createSplashBlast(p.ownerId, p.x, p.y, 90, p.damage * 0.8, kills)
             }
-            // Trigger Silk Web trap
             if (p.type === 'silk') {
               this.clouds.push({ id: uuid(), x: p.x, y: p.y, radius: 45, duration: 80, type: 'silk', ownerId: p.ownerId })
             }
 
             if (enemyAnt.hp <= 0) {
-              kills.push({
-                text: `${this.colonies.get(p.ownerId)?.name || 'An Ant'} slew ${enemyColony.name}!`,
-                attacker: p.ownerId,
-                victim: enemyPid
-              })
-              this._awardXP(p.ownerId, 250) // massive reward on player kill
-              this._awardCarapace(p.ownerId, 10)
-              delete enemyColony.ants[enemyPid]
+              if (enemyAnt.isPlayer) {
+                kills.push({
+                  text: `${colony.name} slew ${enemyColony.name}!`,
+                  attacker: p.ownerId,
+                  victim: enemyPid
+                })
+                this._awardXP(p.ownerId, 250)
+                this._awardCarapace(p.ownerId, 10)
+
+                enemyColony.lives--
+                enemyColony.respawnTimer = 60 // set 3s respawn countdown
+                delete enemyColony.ants[enemyPid]
+              } else {
+                // Slew drone
+                delete enemyColony.ants[enemyAnt.id]
+              }
             }
             break
           }
         }
+        if (hit) break
       }
 
       if (hit) continue
 
-      // Check hits against food shapes
+      // Check hits on food shapes
       for (let i = this.foodShapes.length - 1; i >= 0; i--) {
         const sh = this.foodShapes[i]
         const d = Math.hypot(p.x - sh.x, p.y - sh.y)
@@ -557,30 +654,26 @@ export class ColonyGame {
 
       if (hit) continue
 
-      // Check projectile-to-projectile collisions for Chemical Reactions!
+      // Check bullet-to-bullet Chemical Reactions
       for (const other of active) {
         if (other.ownerId !== p.ownerId) {
           const d = Math.hypot(p.x - other.x, p.y - other.y)
           if (d < 25) {
             hit = true
-            other.life = 0 // destroy other projectile too
+            other.life = 0
 
-            // TRIGGER REACTIONS!
             if ((p.type === 'acid' && other.type === 'honeydew') || (p.type === 'honeydew' && other.type === 'acid')) {
-              // Corrosive Sizzling Mist
               this.clouds.push({
                 id: uuid(),
                 x: p.x, y: p.y,
                 radius: 110,
-                duration: 120, // 6 seconds
+                duration: 120,
                 type: 'mist',
                 ownerId: p.ownerId
               })
             } else if ((p.type === 'poison' && other.type === 'explosive') || (p.type === 'explosive' && other.type === 'poison')) {
-              // Volatile chain reaction explosion!
               this._createSplashBlast(p.ownerId, p.x, p.y, 160, p.damage * 1.5, kills)
             } else if ((p.type === 'silk' && other.type === 'acid') || (p.type === 'acid' && other.type === 'silk')) {
-              // Corrosive spiderwebs
               this.clouds.push({
                 id: uuid(),
                 x: p.x, y: p.y,
@@ -597,30 +690,39 @@ export class ColonyGame {
 
       if (!hit && p.life > 0) active.push(p)
     }
-
     this.projectiles = active
   }
 
   _createSplashBlast(ownerId, x, y, radius, damage, kills) {
-    // Blast enemies
     for (const [enemyPid, enemyColony] of this.colonies) {
       if (enemyPid === ownerId) continue
-      const enemyAnt = enemyColony.ants[enemyPid]
-      if (enemyAnt) {
+
+      const relation = this.colonies.get(ownerId)?.relations[enemyPid] || 'neutral'
+      if (relation === 'ally') continue
+
+      for (const enemyAnt of Object.values(enemyColony.ants)) {
         const d = Math.hypot(x - enemyAnt.position.x, y - enemyAnt.position.y)
         if (d <= radius) {
+          if (enemyAnt.isPlayer && enemyColony.invulnerableTimer > 0) continue
+
           const force = 1 - (d / radius)
           enemyAnt.hp -= damage * force
+
           if (enemyAnt.hp <= 0) {
-            kills.push({ text: `Chemical explosion blasted ${enemyColony.name}!`, attacker: ownerId, victim: enemyPid })
-            this._awardXP(ownerId, 250)
-            delete enemyColony.ants[enemyPid]
+            if (enemyAnt.isPlayer) {
+              kills.push({ text: `Chemical blast slew ${enemyColony.name}!`, attacker: ownerId, victim: enemyPid })
+              this._awardXP(ownerId, 250)
+              enemyColony.lives--
+              enemyColony.respawnTimer = 60
+              delete enemyColony.ants[enemyPid]
+            } else {
+              delete enemyColony.ants[enemyAnt.id]
+            }
           }
         }
       }
     }
 
-    // Blast food shapes
     for (let i = this.foodShapes.length - 1; i >= 0; i--) {
       const sh = this.foodShapes[i]
       const d = Math.hypot(x - sh.x, y - sh.y)
@@ -636,13 +738,12 @@ export class ColonyGame {
     }
   }
 
-  // ── Reaction chemical clouds (mist, silk, poison) ticking ──────────────────
+  // ── Reaction chemical clouds ────────────────────────────────────────────────
   _tickClouds() {
     const active = []
     for (const c of this.clouds) {
       c.duration--
 
-      // Apply cloud ticking effects in radius
       for (const [pid, colony] of this.colonies) {
         const pAnt = colony.ants[pid]
         if (!pAnt) continue
@@ -650,25 +751,20 @@ export class ColonyGame {
         if (d > c.radius) continue
 
         const isFriendly = pid === c.ownerId
+        const isAlly = colony.relations[c.ownerId] === 'ally'
+
         if (c.type === 'mist') {
-          if (isFriendly) {
-            pAnt.hp = Math.min(pAnt.maxHp, pAnt.hp + 0.6) // heal friendly
+          if (isFriendly || isAlly) {
+            pAnt.hp = Math.min(pAnt.maxHp, pAnt.hp + 0.6)
           } else {
-            pAnt.hp -= 0.8 // dissolve enemy
+            pAnt.hp -= 0.8
           }
         } else if (c.type === 'poison') {
-          if (!isFriendly) {
-            pAnt.hp -= 0.7
-          }
+          if (!isFriendly && !isAlly) pAnt.hp -= 0.7
         } else if (c.type === 'silk') {
-          if (!isFriendly) {
-            // High slow is checked during movement. Just apply minor sting
-            pAnt.hp -= 0.1
-          }
+          if (!isFriendly && !isAlly) pAnt.hp -= 0.1
         } else if (c.type === 'silk-acid') {
-          if (!isFriendly) {
-            pAnt.hp -= 1.0 // extremely high corrosive trap
-          }
+          if (!isFriendly && !isAlly) pAnt.hp -= 1.0
         }
       }
 
@@ -677,14 +773,11 @@ export class ColonyGame {
     this.clouds = active
   }
 
-  // ── Stat XP Progression & Awarding ──────────────────────────────────────────
   _awardXP(pid, amount) {
     const colony = this.colonies.get(pid)
     if (!colony) return
-
     colony.xp += amount
     const xpNeeded = this._xpNeededForLevel(colony.level)
-
     if (colony.xp >= xpNeeded) {
       colony.xp -= xpNeeded
       colony.level++
@@ -703,6 +796,10 @@ export class ColonyGame {
     if (shapeType === 'leaf') colony.resources.leaf += 3 * multiplier
     if (shapeType === 'sugar') colony.resources.leaf += 10 * multiplier
     if (shapeType === 'carapace') colony.resources.carapace += 2
+    if (shapeType === 'glow-orb') {
+      colony.resources.leaf += 15 * multiplier
+      colony.resources.carapace += 1 * multiplier
+    }
   }
 
   _awardCarapace(pid, amount) {
@@ -710,17 +807,14 @@ export class ColonyGame {
     if (colony) colony.resources.carapace += amount
   }
 
-  // ── Stat health regeneration & touch decay ──────────────────────────────────
   _tickRegen() {
     for (const [pid, colony] of this.colonies) {
       const pAnt = colony.ants[pid]
       if (!pAnt) continue
 
-      // Stats passive regen
       const baseRegen = colony.stats.regen * 0.08
       const casteBonus = colony.class === 'farmer' ? 0.12 : 0
 
-      // Boost regen inside friendly Granaries
       let insideGranary = false
       for (const ch of Object.values(colony.chambers)) {
         if (ch.active && ch.type === 'granary') {
@@ -728,12 +822,10 @@ export class ColonyGame {
           if (d < 120) insideGranary = true
         }
       }
-
       pAnt.hp = Math.min(pAnt.maxHp, pAnt.hp + baseRegen + casteBonus + (insideGranary ? 0.4 : 0))
     }
   }
 
-  // ── Deployable nest structures (Chambers) ────────────────────────────────────
   _tickChambers() {
     for (const [pid, colony] of this.colonies) {
       const playerAnt = colony.ants[pid]
@@ -742,7 +834,6 @@ export class ColonyGame {
       for (const ch of Object.values(colony.chambers)) {
         if (!ch.active) continue
 
-        // 1. Nursery spawns AI swarm follower drones
         if (ch.type === 'nursery') {
           ch.spawnTimer++
           const currentDronesCount = Object.values(colony.ants).filter(a => !a.isPlayer).length
@@ -756,16 +847,18 @@ export class ColonyGame {
           }
         }
 
-        // 2. Tunnel shoots automated basic acid sprays at enemies in range
         if (ch.type === 'tunnel') {
           ch.spawnTimer++
           if (ch.spawnTimer >= 35) {
             ch.spawnTimer = 0
-            // Find closest enemy player ant
             let nearestEnemy = null
             let bestD = 220
             for (const [enemyPid, enemyColony] of this.colonies) {
               if (enemyPid === pid) continue
+
+              const rel = colony.relations[enemyPid] || 'neutral'
+              if (rel === 'ally') continue
+
               const enemyAnt = enemyColony.ants[enemyPid]
               if (enemyAnt) {
                 const d = Math.hypot(ch.position.x - enemyAnt.position.x, ch.position.y - enemyAnt.position.y)
@@ -794,16 +887,32 @@ export class ColonyGame {
     }
   }
 
-  // ── Procedural food shape maintaining ────────────────────────────────────────
-  _maintainFoodShapes() {
-    const limit = this.dayPhase === 'night' ? 40 : 80 // fewer shapes at night
+  _tickFoodDrift() {
+    for (const sh of this.foodShapes) {
+      if (sh.type === 'glow-orb') {
+        if (sh.driftAngle === undefined) sh.driftAngle = Math.random() * Math.PI * 2
+        if (Math.random() < 0.015) sh.driftAngle = Math.random() * Math.PI * 2
+        sh.x += Math.cos(sh.driftAngle) * 0.75
+        sh.y += Math.sin(sh.driftAngle) * 0.75
+
+        // Clamp to map borders
+        sh.x = Math.max(32, Math.min(MAP_SIZE - 32, sh.x))
+        sh.y = Math.max(32, Math.min(MAP_SIZE - 32, sh.y))
+      }
+    }
+  }
+
+  _maintainFoodShapes(forceFill = false) {
+    const limit = this.dayPhase === 'night' ? 40 : 80
     if (this.foodShapes.length >= limit) return
 
     const types = ['leaf', 'sugar', 'carapace']
-    const weights = [0.65, 0.25, 0.10] // leaf is most common
+    const weights = [0.65, 0.25, 0.10]
 
-    while (this.foodShapes.length < limit) {
-      // Pick random walkable position on map
+    let spawnedThisCycle = 0
+    const maxSpawnPerCycle = forceFill ? limit : 2
+
+    while (this.foodShapes.length < limit && spawnedThisCycle < maxSpawnPerCycle) {
       const tx = Math.floor(Math.random() * (64 - 4)) + 2
       const ty = Math.floor(Math.random() * (64 - 4)) + 2
 
@@ -813,12 +922,15 @@ export class ColonyGame {
       const x = tx * TILE + TILE / 2 + (Math.random() - 0.5) * 10
       const y = ty * TILE + TILE / 2 + (Math.random() - 0.5) * 10
 
-      // Roll shape type
       const roll = Math.random()
       let type = 'leaf'
       let hp = 15, size = 6, xpVal = 10, color = '#6abf30'
 
-      if (roll > weights[0] + weights[1]) {
+      // Night time glowing fireflies!
+      if (this.dayPhase === 'night' && Math.random() < 0.40) {
+        type = 'glow-orb'
+        hp = 20; size = 7; xpVal = 50; color = '#ec4899'
+      } else if (roll > weights[0] + weights[1]) {
         type = 'carapace'
         hp = 85; size = 11; xpVal = 60; color = '#60a5fa'
       } else if (roll > weights[0]) {
@@ -834,19 +946,18 @@ export class ColonyGame {
         rotation: Math.random() * Math.PI,
         rotSpeed: (Math.random() - 0.5) * 0.05
       })
+      spawnedThisCycle++
     }
   }
 
-  // ── Day/Night Cycle & Wolf Spider Boss Spawning ─────────────────────────────
   tickDayCycle() {
     if (--this.dayTimer <= 0) {
       this.dayPhase = this.dayPhase === 'day' ? 'night' : 'day'
-      this.dayTimer = 240 // reset timer (12 seconds per phase at 20Hz ticks)
+      this.dayTimer = 240
 
       if (this.dayPhase === 'night') {
         this._spawnWolfSpiderBoss()
       } else {
-        // despawn alive predators at dawn
         this.predators = []
       }
       return this.dayPhase
@@ -855,7 +966,6 @@ export class ColonyGame {
   }
 
   _spawnWolfSpiderBoss() {
-    // Spawns one massive Wolf Spider Predator at map center
     this.predators.push({
       id: uuid(),
       name: 'APEX WOLF SPIDER',
@@ -866,10 +976,13 @@ export class ColonyGame {
       damage: 40,
       speed: 4.8,
       size: 34,
-      attackCooldown: 0
+      attackCooldown: 0,
+      detectionRange: 420,
+      wanderAngle: Math.random() * Math.PI * 2,
+      wanderTimer: 0,
+      chasing: false
     })
 
-    // Also spawn a few small wandering hunter beetles
     for (let i = 0; i < 3; i++) {
       const pos = SPAWN_POSITIONS[Math.floor(Math.random() * SPAWN_POSITIONS.length)]
       this.predators.push({
@@ -882,7 +995,11 @@ export class ColonyGame {
         damage: 18,
         speed: 3.5,
         size: 16,
-        attackCooldown: 0
+        attackCooldown: 0,
+        detectionRange: 260,
+        wanderAngle: Math.random() * Math.PI * 2,
+        wanderTimer: 0,
+        chasing: false
       })
     }
   }
@@ -892,46 +1009,80 @@ export class ColonyGame {
     for (const p of this.predators) {
       if (p.attackCooldown > 0) p.attackCooldown--
 
-      // Seek nearest player ant
+      // Safety checks
+      const detRange = p.detectionRange ?? (p.name.includes('APEX') ? 420 : 260)
+      if (p.wanderAngle === undefined) p.wanderAngle = Math.random() * Math.PI * 2
+      if (p.wanderTimer === undefined) p.wanderTimer = 0
+
       let nearestPlayer = null
-      let bestD = 800
+      let bestD = detRange // Only aggro if player is strictly within detection range
 
       for (const [pid, colony] of this.colonies) {
         const playerAnt = colony.ants[pid]
         if (playerAnt) {
           const d = Math.hypot(p.x - playerAnt.position.x, p.y - playerAnt.position.y)
-          if (d < bestD) { bestD = d; nearestPlayer = playerAnt }
-        }
-      }
-
-      if (nearestPlayer) {
-        const ang = Math.atan2(nearestPlayer.position.y - p.y, nearestPlayer.position.x - p.x)
-        p.x += Math.cos(ang) * p.speed
-        p.y += Math.sin(ang) * p.speed
-
-        // Touch contact damage
-        if (bestD < p.size + 15 && p.attackCooldown === 0) {
-          nearestPlayer.hp -= p.damage
-          p.attackCooldown = 25 // tick delay
-
-          if (nearestPlayer.hp <= 0) {
-            kills.push({ text: `${p.name} devoured a player!`, victim: nearestPlayer.id })
-            delete this.colonies.get(nearestPlayer.id)?.ants[nearestPlayer.id]
+          if (d < bestD) {
+            bestD = d
+            nearestPlayer = playerAnt
           }
         }
       }
 
-      // Check hits from player projectiles on predator
+      if (nearestPlayer) {
+        // Locked-on active chase mode!
+        p.chasing = true
+        const ang = Math.atan2(nearestPlayer.position.y - p.y, nearestPlayer.position.x - p.x)
+        p.x += Math.cos(ang) * p.speed
+        p.y += Math.sin(ang) * p.speed
+
+        if (bestD < p.size + 15 && p.attackCooldown === 0) {
+          // Bite player
+          const enemyColony = this.colonies.get(nearestPlayer.id)
+          if (!enemyColony || enemyColony.invulnerableTimer === 0) {
+            nearestPlayer.hp -= p.damage
+            p.attackCooldown = 25
+
+            if (nearestPlayer.hp <= 0) {
+              kills.push({ text: `${p.name} devoured ${enemyColony?.name || 'a player'}!`, victim: nearestPlayer.id })
+              if (enemyColony) {
+                enemyColony.lives--
+                enemyColony.respawnTimer = 60
+                delete enemyColony.ants[nearestPlayer.id]
+              }
+            }
+          }
+        }
+      } else {
+        // Organic relaxed wandering mode!
+        p.chasing = false
+        p.wanderTimer--
+        if (p.wanderTimer <= 0) {
+          p.wanderAngle = Math.random() * Math.PI * 2
+          p.wanderTimer = 60 + Math.floor(Math.random() * 80) // 1.5 to 3 seconds
+        }
+
+        const wanderSpeed = p.speed * 0.45
+        p.x += Math.cos(p.wanderAngle) * wanderSpeed
+        p.y += Math.sin(p.wanderAngle) * wanderSpeed
+
+        // Turn around on border hits
+        if (p.x < p.size + 16) { p.x = p.size + 16; p.wanderAngle = Math.PI - p.wanderAngle }
+        if (p.x > MAP_SIZE - p.size - 16) { p.x = MAP_SIZE - p.size - 16; p.wanderAngle = Math.PI - p.wanderAngle }
+        if (p.y < p.size + 16) { p.y = p.size + 16; p.wanderAngle = -p.wanderAngle }
+        if (p.y > MAP_SIZE - p.size - 16) { p.y = MAP_SIZE - p.size - 16; p.wanderAngle = -p.wanderAngle }
+      }
+
+      // Check hits from projectiles
       for (const bullet of this.projectiles) {
         const d = Math.hypot(bullet.x - p.x, bullet.y - p.y)
         if (d < p.size + 10) {
           p.hp -= bullet.damage
-          bullet.life = 0 // absorb bullet
+          bullet.life = 0
 
           if (p.hp <= 0) {
             kills.push({ text: `APEX DEFEATED! ${this.colonies.get(bullet.ownerId)?.name || 'An ant'} slew ${p.name}!`, attacker: bullet.ownerId })
-            this._awardXP(bullet.ownerId, 1200) // immense bonus XP
-            this._awardCarapace(bullet.ownerId, 25)  // legendary loot drop
+            this._awardXP(bullet.ownerId, 1200)
+            this._awardCarapace(bullet.ownerId, 25)
             break
           }
         }
@@ -942,11 +1093,9 @@ export class ColonyGame {
     this.predators = active
   }
 
-  // ── Check win conditions (last ant standing) ───────────────────────────────
   checkWinner() {
     if (this._maxPlayers < 2) return null
-    const alive = [...this.colonies.entries()].filter(([, c]) =>
-      Object.values(c.ants).some(a => a.isPlayer))
+    const alive = [...this.colonies.entries()].filter(([, c]) => c.lives > 0 || Object.keys(c.ants).length > 0)
     return alive.length === 1 ? alive[0][0] : null
   }
 

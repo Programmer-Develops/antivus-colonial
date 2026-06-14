@@ -31,8 +31,9 @@ export function initInput(app, cam) {
     const wx = (sx - _cam.x) / _z
     const wy = (sy - _cam.y) / _z
 
+    const minZ = Math.max(_app.screen.width / MAP_SIZE, _app.screen.height / MAP_SIZE)
     const factor = e.deltaY < 0 ? 1.1 : 0.9
-    _z = Math.max(0.4, Math.min(3, _z * factor))
+    _z = Math.max(minZ, Math.min(3, _z * factor))
 
     _cam.scale.x = _z
     _cam.scale.y = _z
@@ -165,8 +166,18 @@ function _clamp() {
   if (!_app || !_cam) return
   const minX = _app.screen.width  - MAP_SIZE * _z
   const minY = _app.screen.height - MAP_SIZE * _z
-  _cam.x = Math.min(0, Math.max(minX, _cam.x))
-  _cam.y = Math.min(0, Math.max(minY, _cam.y))
+
+  if (_app.screen.width > MAP_SIZE * _z) {
+    _cam.x = (_app.screen.width - MAP_SIZE * _z) / 2
+  } else {
+    _cam.x = Math.min(0, Math.max(minX, _cam.x))
+  }
+
+  if (_app.screen.height > MAP_SIZE * _z) {
+    _cam.y = (_app.screen.height - MAP_SIZE * _z) / 2
+  } else {
+    _cam.y = Math.min(0, Math.max(minY, _cam.y))
+  }
 }
 
 function _clearPlacement() {

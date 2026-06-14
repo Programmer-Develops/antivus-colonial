@@ -4,7 +4,7 @@ import { useGameStore } from '../store/gameStore.js'
 let socket = null
 
 export function initSocket() {
-  const SERVER_URL = import.meta.env.VITE_SERVER_URL || 'http://localhost:3000'
+  const SERVER_URL = import.meta.env.VITE_SERVER_URL || (import.meta.env.PROD ? '' : 'http://localhost:3000')
   socket = io(SERVER_URL, { transports: ['websocket','polling'], reconnectionAttempts: 5 })
   const store = useGameStore.getState()
 
@@ -58,11 +58,27 @@ export function initSocket() {
     showToast(phase === 'night' ? '🌙 Night falls! Apex Predators emerge!' : '☀️ Dawn breaks. Predators retreat.', 'info')
   })
 
-  socket.on('kill:feed', (e) => store.addKill(e))
+  socket.on('kill:feed', (e) => {
+    store.addKill(e)
+    if (window.showArenaNotification) {
+      window.showArenaNotification(e.text)
+    }
+  })
 
   socket.on('game:over', ({ winner, winnerName }) => {
     store.setPhase('gameover')
     showGameOver(winner === socket.id, winnerName)
+  })
+
+  // ── Diplomacy Socket Receivers ─────────────────────────────────────────────
+  socket.on('relations:ally-request', ({ fromId, fromName }) => {
+    useGameStore.setState(s => ({
+      allianceRequests: [...s.allianceRequests.filter(r => r.fromId !== fromId), { fromId, fromName }]
+    }))
+  })
+
+  socket.on('relations:ally-declined', ({ fromName }) => {
+    showToast(`🤝 ${fromName} declined your alliance request.`, 'error')
   })
 
   return socket
@@ -78,10 +94,15 @@ export const emit = {
   attackTarget: (antIds, tid)     => socket?.emit('ants:attack', { antIds, targetId: tid }),
   sendChat:     (msg)             => socket?.emit('chat', { msg }),
 
-  // ── Arras.io client emits ─────────────────────────────────────────────────
   sendPlayerInput: (input)        => socket?.emit('player:input', input),
   upgradeStat:     (stat)         => socket?.emit('player:upgrade-stat', { stat }),
-  evolve:          (className)    => socket?.emit('player:evolve', { className })
+  evolve:          (className)    => socket?.emit('player:evolve', { className }),
+
+  // ── Diplomacy Emits ───────────────────────────────────────────────────────
+  declareWar:      (targetId)     => socket?.emit('relations:declare-war', { targetId }),
+  proposeAlliance: (targetId)     => socket?.emit('relations:propose-alliance', { targetId }),
+  acceptAlliance:  (targetId)     => socket?.emit('relations:accept-alliance', { targetId }),
+  declineAlliance: (targetId)     => socket?.emit('relations:decline-alliance', { targetId })
 }
 
 export function getSocket() { return socket }

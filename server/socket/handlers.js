@@ -61,13 +61,11 @@ export function registerSocketHandlers(io) {
       socket.emit('rooms:list', getRoomList())
     })
 
-    // ── Direct keyboard WASD / Mouse Aim input sync ──────────────────────────
     socket.on('player:input', (input) => {
       const room = rooms.getByPlayer(socket.id)
       if (room) room.game.updatePlayerInput(socket.id, input)
     })
 
-    // ── Stat point upgrade clicked ───────────────────────────────────────────
     socket.on('player:upgrade-stat', ({ stat }) => {
       const room = rooms.getByPlayer(socket.id)
       if (room) {
@@ -76,12 +74,52 @@ export function registerSocketHandlers(io) {
       }
     })
 
-    // ── Evolve ant caste chosen ──────────────────────────────────────────────
     socket.on('player:evolve', ({ className }) => {
       const room = rooms.getByPlayer(socket.id)
       if (room) {
         const res = room.game.evolvePlayer(socket.id, className)
         if (!res.ok && res.msg) socket.emit('error', { msg: res.msg })
+      }
+    })
+
+    // ── Diplomacy Handlers ───────────────────────────────────────────────────
+    socket.on('relations:declare-war', ({ targetId }) => {
+      const room = rooms.getByPlayer(socket.id)
+      if (room) {
+        const res = room.game.declareWar(socket.id, targetId)
+        if (res.ok) {
+          io.to(room.id).emit('kill:feed', { text: `⚔️ WAR! ${res.nameA} & ${res.nameB} are now mutual enemies!` })
+        }
+      }
+    })
+
+    socket.on('relations:propose-alliance', ({ targetId }) => {
+      const room = rooms.getByPlayer(socket.id)
+      if (room) {
+        const col = room.game.getColonies()[socket.id]
+        if (col) {
+          io.to(targetId).emit('relations:ally-request', { fromId: socket.id, fromName: col.name })
+        }
+      }
+    })
+
+    socket.on('relations:accept-alliance', ({ targetId }) => {
+      const room = rooms.getByPlayer(socket.id)
+      if (room) {
+        const res = room.game.setAlliance(socket.id, targetId)
+        if (res.ok) {
+          io.to(room.id).emit('kill:feed', { text: `🤝 ALLY! Alliance forged between ${res.nameA} and ${res.nameB}!` })
+        }
+      }
+    })
+
+    socket.on('relations:decline-alliance', ({ targetId }) => {
+      const room = rooms.getByPlayer(socket.id)
+      if (room) {
+        const col = room.game.getColonies()[socket.id]
+        if (col) {
+          io.to(targetId).emit('relations:ally-declined', { fromName: col.name })
+        }
       }
     })
 
@@ -106,7 +144,7 @@ export function registerSocketHandlers(io) {
     })
   })
 
-  // Game tick 20Hz (50ms interval)
+  // Game tick 20Hz
   setInterval(() => {
     for (const room of rooms.all()) {
       if (!room.isPlaying()) continue
@@ -133,7 +171,7 @@ export function registerSocketHandlers(io) {
     }
   }, 50)
 
-  // Day/night cycle ticker (1s interval)
+  // Day/night cycle ticker
   setInterval(() => {
     for (const room of rooms.all()) {
       if (!room.isPlaying()) continue

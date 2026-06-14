@@ -10,6 +10,12 @@ function _set(id, val) {
   const el = document.getElementById(id)
   if (el) el.textContent = val
 }
+function _html(id, html) {
+  if (_last[id] === html) return
+  _last[id] = html
+  const el = document.getElementById(id)
+  if (el) el.innerHTML = html
+}
 function _style(id, prop, val) {
   const key = id + prop
   if (_last[key] === val) return
@@ -54,16 +60,51 @@ export function initUI(overlay) {
       letter-spacing:0.1em;padding:7px 16px;cursor:pointer;
       transition:all 0.18s;box-shadow:0 4px 16px rgba(0,0,0,0.4);">? HOW TO PLAY</button>
 
-    <!-- Top-Center-Below: Evolution choices panel (neon glassmorphic dropdown cards) -->
+    <!-- Top-Right-Below: Diplomacy Player List -->
+    <div id="hud-diplomacy-panel" style="position:absolute;top:58px;right:16px;
+      background:rgba(10,10,14,0.85);backdrop-filter:blur(12px);
+      border:0.5px solid rgba(74,222,128,0.22);border-radius:12px;
+      padding:12px 16px;display:none;flex-direction:column;gap:6px;
+      font-family:'Crimson Pro',serif;min-width:230px;
+      box-shadow:0 8px 32px rgba(0,0,0,0.6);z-index:20;">
+      <div style="font-family:'Cinzel',serif;font-size:9px;letter-spacing:0.2em;color:#4ade80;margin-bottom:4px">ARENA PLAYERS</div>
+      <div id="diplomacy-players-list" style="display:flex;flex-direction:column;gap:6px;max-height:180px;overflow-y:auto;"></div>
+    </div>
+
+    <!-- Top-Center-Below: Evolution choices panel -->
     <div id="hud-evolution" style="position:absolute;top:80px;left:50%;transform:translateX(-50%);
       display:none;flex-direction:column;align-items:center;gap:10px;z-index:90;">
       <div style="font-family:'Cinzel',serif;font-size:11px;font-weight:700;
         letter-spacing:0.2em;color:#4ade80;text-shadow:0 0 10px rgba(74,222,128,0.6);
         background:rgba(10,10,14,0.9);backdrop-filter:blur(8px);
         padding:4px 20px;border-radius:99px;border:0.5px solid rgba(74,222,128,0.2)">
-        ▲ EVOLUTION CHOOSE AN ANT CLASS ▲
+        ▲ EVOLUTION: CHOOSE AN ANT CLASS ▲
       </div>
       <div id="evolve-cards-list" style="display:flex;gap:16px;justify-content:center;"></div>
+    </div>
+
+    <!-- Center: Alliance request popup proposal dialog -->
+    <div id="alliance-proposal-modal" style="position:fixed;top:100px;left:50%;
+      transform:translateX(-50%);z-index:190;display:none;
+      background:rgba(10,10,15,0.95);backdrop-filter:blur(14px);
+      border:0.5px solid #4ade80;border-radius:14px;padding:18px 26px;
+      font-family:'Crimson Pro',serif;min-width:320px;text-align:center;
+      box-shadow:0 12px 48px rgba(74,222,128,0.25);animation:fadeUp 0.3s ease both;">
+      <div style="font-family:'Cinzel',serif;font-size:11px;letter-spacing:0.18em;color:#4ade80;margin-bottom:8px">ALLIANCE PROPOSAL 🤝</div>
+      <p id="alliance-proposal-text" style="color:#e8e6d9;font-size:14px;margin-bottom:14px;line-height:1.4;"></p>
+      <div style="display:flex;gap:12px;justify-content:center;">
+        <button id="btn-alliance-accept" class="lobby-btn btn-primary" style="padding:6px 18px;font-size:10px;border-radius:6px;">ACCEPT 🤝</button>
+        <button id="btn-alliance-decline" class="lobby-btn btn-secondary" style="padding:6px 18px;font-size:10px;border-radius:6px;border-color:#ef4444;color:#ef4444;">DECLINE ❌</button>
+      </div>
+    </div>
+
+    <!-- Center: Respawning Countdown overlay screen -->
+    <div id="respawn-overlay" style="position:fixed;inset:0;z-index:150;
+      background:rgba(5,5,8,0.72);backdrop-filter:blur(8px);
+      display:none;flex-direction:column;align-items:center;justify-content:center;gap:15px;
+      pointer-events:all;">
+      <div style="font-family:'Cinzel',serif;font-size:2rem;font-weight:800;color:#ef4444;letter-spacing:0.18em;text-shadow:0 0 16px rgba(239,68,68,0.5)">ANT DEFEATED</div>
+      <div style="font-family:'Crimson Pro',serif;font-size:1.2rem;color:#e8e6d9;font-style:italic;" id="respawn-countdown-text">RESPAWNING IN 3...</div>
     </div>
 
     <!-- Bottom-Left: Glassmorphic Stat Upgrade Sidebar -->
@@ -72,7 +113,7 @@ export function initUI(overlay) {
       border:0.5px solid rgba(74,222,128,0.22);border-radius:12px;
       padding:14px 18px;display:none;flex-direction:column;gap:10px;
       font-family:'Crimson Pro',serif;min-width:210px;
-      box-shadow:0 8px 32px rgba(0,0,0,0.6);">
+      box-shadow:0 8px 32px rgba(0,0,0,0.6);z-index:20;">
       <div style="font-family:'Cinzel',serif;font-size:9px;letter-spacing:0.2em;color:#4ade80;margin-bottom:2px">
         ANT STAT UPGRADES <span id="stat-points-avail" style="float:right;color:#fbbf24;font-weight:700;"></span>
       </div>
@@ -113,7 +154,7 @@ export function initUI(overlay) {
       background:rgba(10,10,14,0.85);backdrop-filter:blur(12px);
       border:0.5px solid rgba(74,222,128,0.22);border-radius:10px;
       padding:10px 24px;display:none;align-items:center;gap:14px;
-      min-width:380px;box-shadow:0 8px 32px rgba(0,0,0,0.65);">
+      min-width:410px;box-shadow:0 8px 32px rgba(0,0,0,0.65);z-index:20;">
       <div style="font-family:'Cinzel',serif;font-size:12px;font-weight:700;color:#e8e6d9;">
         LVL <span id="hud-lvl-val">1</span>
       </div>
@@ -123,11 +164,14 @@ export function initUI(overlay) {
       <div style="font-family:monospace;font-size:11px;color:#9ca38f;">
         <span id="hud-xp-val">0</span> / <span id="hud-xp-max">40</span> XP
       </div>
+      <!-- Heart-based Lives tracker -->
+      <div style="font-family:'Cinzel',serif;font-size:12px;font-weight:700;color:#ef4444;margin-left:6px;display:flex;align-items:center;gap:3px;" id="hud-lives-container">
+      </div>
     </div>
 
-    <!-- Bottom-Center-Above: Nest deploy buttons (RTS-IO elements) -->
+    <!-- Bottom-Center-Above: Nest deploy buttons -->
     <div id="hud-build" style="position:absolute;bottom:76px;left:50%;transform:translateX(-50%);
-      display:none;gap:8px;align-items:center;">
+      display:none;gap:8px;align-items:center;z-index:20;">
       <div style="font-family:'Cinzel',serif;font-size:8px;letter-spacing:0.18em;
         color:#4ade80;margin-right:6px;text-align:right;">NEST DEPLOY<br><span style="color:#6b6b5a;font-size:7px;">(B KEY)</span></div>
       ${_bBtn('nursery',  '🥚', 'Nursery',  '50🍃', 'Larva Swarm Nest - breeds AI follower drones')}
@@ -136,17 +180,17 @@ export function initUI(overlay) {
       ${_bBtn('tunnel',   '🕳', 'Tunnel',   '30🍃', 'Warp Portal & auto-turret')}
     </div>
 
-    <!-- Top-Right-Below: Kill feed -->
-    <div id="hud-killfeed" style="position:absolute;top:58px;right:16px;
+    <!-- Top-Right-Below: Kill feed (moved left slightly to make space) -->
+    <div id="hud-killfeed" style="position:absolute;top:58px;right:260px;
       display:none;flex-direction:column;gap:4px;max-width:260px;
-      font-family:'Crimson Pro',serif;font-size:12px;"></div>
+      font-family:'Crimson Pro',serif;font-size:12px;z-index:10;"></div>
 
     <!-- Toast container -->
     <div id="toast-container" style="position:absolute;bottom:145px;left:50%;
       transform:translateX(-50%);display:flex;flex-direction:column;
-      gap:6px;align-items:center;pointer-events:none;"></div>
+      gap:6px;align-items:center;pointer-events:none;z-index:40;"></div>
 
-    <!-- Controls modal (Refined top-down shooter guide) -->
+    <!-- Controls modal -->
     <div id="controls-modal" style="position:fixed;inset:0;z-index:180;display:none;
       align-items:center;justify-content:center;
       background:rgba(5,5,8,0.85);backdrop-filter:blur(8px);">
@@ -174,11 +218,11 @@ export function initUI(overlay) {
         <div class="ctrl-s" style="margin-top:1.2rem">PHEROMONE TURF CONTROL ( turf war )</div>
         <p class="ctrl-note">Walking paints the tiles with your colony's color. Friendly ants running on your color get **+35% Speed & high regen**! Enemies stepping on your color are **slowed by 25%**.</p>
 
-        <div class="ctrl-s" style="margin-top:1.2rem">NIGHT SURVIVAL BOSS EVENTS</div>
-        <p class="ctrl-note">At Night, the arena goes dark and spotlights fade in. Glowing neon **Giant Wolf Spiders** spawn and hunt players. Team up or fortify your nest to survive!</p>
+        <div class="ctrl-s" style="margin-top:1.2rem">NIGHT SURVIVAL & GLOW ORBS</div>
+        <p class="ctrl-note">At Night, the arena goes dark. Organic neon **Glowing Firefly Orbs** float around—consume them for double XP & fungus! Giant Spiders spawn but only chase if you enter their target range. Watch for the red pulsing exclamation '!' aggro alert!</p>
 
         <div class="ctrl-s" style="margin-top:1.2rem">NEST CHAMBER DEPLOY (B KEY)</div>
-        <div class="ctrl-r"><span class="ctrl-k">🥚 Nursery</span><span class="ctrl-d">Spawns mini AI drone-ants that protect you</span></div>
+        <div class="ctrl-r"><span class="ctrl-k">🥚 Nursery</span><span class="ctrl-d">Spawns mini AI drone-ants that protect you and fight</span></div>
         <div class="ctrl-r"><span class="ctrl-k">🕳 Tunnel</span><span class="ctrl-d">Shoots acid turrets and acts as a warp portal</span></div>
         <div class="ctrl-r"><span class="ctrl-k">⚔️ Barracks</span><span class="ctrl-d">High-HP shield barricade dealing touch damage</span></div>
 
@@ -234,9 +278,51 @@ export function initUI(overlay) {
     }
   })
 
-  // ── Unified Zustand Game Store Subscriber ──────────────────────────────────
+  // 🤝 Alliance Popup Button Click bindings
+  document.getElementById('btn-alliance-accept').addEventListener('click', () => {
+    const requests = useGameStore.getState().allianceRequests
+    if (requests.length > 0) {
+      const active = requests[0]
+      emit.acceptAlliance(active.fromId)
+      useGameStore.setState(s => ({ allianceRequests: s.allianceRequests.slice(1) }))
+      document.getElementById('alliance-proposal-modal').style.display = 'none'
+    }
+  })
+
+  document.getElementById('btn-alliance-decline').addEventListener('click', () => {
+    const requests = useGameStore.getState().allianceRequests
+    if (requests.length > 0) {
+      const active = requests[0]
+      emit.declineAlliance(active.fromId)
+      useGameStore.setState(s => ({ allianceRequests: s.allianceRequests.slice(1) }))
+      document.getElementById('alliance-proposal-modal').style.display = 'none'
+    }
+  })
+
+  // ── Arena Alert Notifications System ──────────────────────────────────────
+  window.showArenaNotification = function(text) {
+    const container = document.getElementById('hud-killfeed')
+    if (!container) return
+
+    container.style.display = 'flex'
+
+    const el = document.createElement('div')
+    el.className = 'kill-entry'
+    el.innerHTML = text
+
+    container.appendChild(el)
+
+    // After 4.5 seconds, trigger the fade-out, then remove from DOM
+    setTimeout(() => {
+      el.style.animation = '_ko 0.4s ease both'
+      setTimeout(() => {
+        el.remove()
+      }, 400)
+    }, 4500)
+  }
+
   useGameStore.subscribe((state) => {
-    const { phase, colony, dayPhase, killFeed, myId } = state
+    const { phase, colony, dayPhase, myId, colonies, allianceRequests } = state
     if (phase !== 'playing') return
 
     _showHUDPanels()
@@ -254,29 +340,44 @@ export function initUI(overlay) {
     const xpPct = Math.min(100, ((colony.xp ?? 0) / maxXP) * 100)
     _style('hud-xp-fill', 'width', xpPct + '%')
 
-    // 3. Stat upgrade slots drawing
+    // 3. Lives red hearts meter
+    _updateLivesMeter(colony.lives ?? 3)
+
+    // 4. Respawn Overlay countdown trigger
+    const respTimer = colony.respawnTimer ?? 0
+    if (respTimer > 0) {
+      _style('respawn-overlay', 'display', 'flex')
+      const secs = Math.ceil(respTimer / 20)
+      const el = document.getElementById('respawn-countdown-text')
+      if (el) el.textContent = `RESPAWNING IN ${secs}...`
+    } else {
+      _style('respawn-overlay', 'display', 'none')
+    }
+
+    // 5. Stat upgrade slots drawing
     _updateStatUpgradesPanel(colony)
 
-    // 4. Evolution panel triggers
+    // 6. Evolution panel triggers
     _updateEvolutionPanel(colony)
 
-    // 5. Day/night icon sync
+    // 7. Arena Diplomacy Player List Ingestion
+    _updateDiplomacyList(colonies, myId)
+
+    // 8. Ingest Alliance Proposal popup
+    _updateAlliancePopup(allianceRequests)
+
+    // 9. Day/night cycle icon
     const isDay = dayPhase === 'day'
     _set('day-icon',  isDay ? '☀' : '🌙')
     _set('day-label', isDay ? 'DAY' : 'NIGHT')
     _style('day-label', 'color', isDay ? '#fbbf24' : '#a78bfa')
     _style('day-bar',   'background', isDay ? '#fbbf24' : '#a78bfa')
 
-    // 6. Kill feed HTML sync
-    const kfEl = document.getElementById('hud-killfeed')
-    const kfHTML = (killFeed || []).map(e =>
-      `<div class="kill-entry">${e.text}</div>`).join('')
-    if (kfEl && kfEl.innerHTML !== kfHTML) kfEl.innerHTML = kfHTML
   })
 
   // Show help modal on very first load
-  useGameStore.subscribe(s => s.phase, (phase) => {
-    if (phase !== 'playing') return
+  useGameStore.subscribe((state) => {
+    if (state.phase !== 'playing') return
     setTimeout(() => {
       if (!localStorage.getItem('antivus_shooter_seen')) {
         document.getElementById('controls-modal').style.display = 'flex'
@@ -284,6 +385,95 @@ export function initUI(overlay) {
       }
     }, 600)
   })
+}
+
+// ── Ingest Player Red Heart Lives ────────────────────────────────────────────
+function _updateLivesMeter(lives) {
+  const container = document.getElementById('hud-lives-container')
+  if (container) {
+    let hearts = ''
+    for (let i = 0; i < 3; i++) {
+      hearts += i < lives ? '❤️' : '🖤'
+    }
+    if (container.innerHTML !== hearts) container.innerHTML = hearts
+  }
+}
+
+// ── Ingest Arena Diplomacy Player List ───────────────────────────────────────
+function _updateDiplomacyList(colonies, myId) {
+  const container = document.getElementById('diplomacy-players-list')
+  if (!container || !myId || !colonies[myId]) return
+
+  const myCol = colonies[myId]
+  const otherPlayers = Object.entries(colonies).filter(([pid]) => pid !== myId)
+
+  if (otherPlayers.length === 0) {
+    _html('diplomacy-players-list', `<div style="color:#6b6b5a;font-size:12px;font-style:italic;text-align:center;padding:4px 0">Waiting for other players...</div>`)
+    return
+  }
+
+  const listHTML = otherPlayers.map(([pid, col]) => {
+    const rel = myCol.relations?.[pid] || 'neutral'
+    let badgeText = 'NEUTRAL ⚪'
+    let badgeCol = '#9ca38f'
+    let badgeBg = 'rgba(255,255,255,0.05)'
+
+    if (rel === 'enemy') {
+      badgeText = 'ENEMY ⚔️'
+      badgeCol = '#f87171'
+      badgeBg = 'rgba(239,68,68,0.1)'
+    } else if (rel === 'ally') {
+      badgeText = 'ALLY 🤝'
+      badgeCol = '#4ade80'
+      badgeBg = 'rgba(74,222,128,0.1)'
+    }
+
+    const buttonsHTML = rel === 'ally'
+      ? `<button class="dipl-btn break-btn" onclick="window.antWar('${pid}')">WAR 💔</button>`
+      : `
+        <button class="dipl-btn war-btn" onclick="window.antWar('${pid}')">WAR ⚔️</button>
+        <button class="dipl-btn ally-btn" onclick="window.antAlly('${pid}')">ALLY 🤝</button>
+      `
+
+    return `
+      <div class="player-dipl-row" style="border-left:3px solid ${col.color || '#888'}">
+        <div style="flex:1;min-width:0;">
+          <div style="font-size:12px;color:#e8e6d9;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${col.name}</div>
+          <div style="font-size:10px;color:#6b6b5a;margin-top:1px">Lvl ${col.level} · ${col.class.toUpperCase()}</div>
+        </div>
+        <div style="display:flex;flex-direction:column;align-items:flex-end;gap:4px">
+          <span style="font-size:9px;color:${badgeCol};background:${badgeBg};padding:1px 6px;border-radius:4px;font-family:'Cinzel',serif;font-weight:700;letter-spacing:0.05em">${badgeText}</span>
+          <div style="display:flex;gap:3px">${buttonsHTML}</div>
+        </div>
+      </div>
+    `
+  }).join('')
+
+  _html('diplomacy-players-list', listHTML)
+}
+
+// Global diplomacy action binders
+window.antWar = function(targetId) {
+  emit.declareWar(targetId)
+}
+window.antAlly = function(targetId) {
+  emit.proposeAlliance(targetId)
+}
+
+// ── Ingest Alliance Invites queue ────────────────────────────────────────────
+function _updateAlliancePopup(requests) {
+  const modal = document.getElementById('alliance-proposal-modal')
+  if (!modal) return
+
+  if (!requests || requests.length === 0) {
+    modal.style.display = 'none'
+    return
+  }
+
+  const active = requests[0]
+  const textEl = document.getElementById('alliance-proposal-text')
+  if (textEl) textEl.textContent = `${active.fromName} proposes a mutual alliance. Friendly swarms will not attack and you can heal each other!`
+  modal.style.display = 'block'
 }
 
 // ── Render Glassmorphic Stat Blocks ──────────────────────────────────────────
@@ -308,7 +498,6 @@ function _updateStatUpgradesPanel(colony) {
       if (blocksContainer.innerHTML !== blocksHTML) blocksContainer.innerHTML = blocksHTML
     }
 
-    // Toggle upgrade button visibility
     const btn = document.getElementById(`btn-add-${stat}`)
     if (btn) {
       if (points > 0 && allocated < 7) {
@@ -321,15 +510,12 @@ function _updateStatUpgradesPanel(colony) {
 }
 
 // ── Evolve ant cards list ───────────────────────────────────────────────────
-// Cache last evolve choices so we don't recreate DOM cards unnecessarily
 let _lastEvolveKey = ''
 const EVOLVE_DEFS = {
-  // Tier 2 (from Lvl 5 worker)
   soldier: { emoji:'⚔️', title:'Soldier', desc:'Heavy biting tank. Extreme HP, strong melee tusk spray.', color:'#f87171' },
   scout:   { emoji:'▲', title:'Scout',   desc:'Super fast. Rapid fires poison needles. Active Dash (Shift).', color:'#60a5fa' },
   ranger:  { emoji:'✚', title:'Ranger',  desc:'Long range. Heavy acid spitting blobs.', color:'#34d399' },
   farmer:  { emoji:'🍄', title:'Farmer',  desc:'Honeydew healing droplets, high leaf income gathering aura.', color:'#fb923c' },
-  // Tier 3
   bombardier: { emoji:'💣', title:'Bombardier', desc:'Heavy chemical explosive spores. Explodes on death!', color:'#ef4444' },
   weaver:     { emoji:'🕸️', title:'Weaver',     desc:'Fires sticky silk webs to trap targets. Build strong chambers.', color:'#a78bfa' },
   bullet:     { emoji:'🚀', title:'Bullet Ant',  desc:'Single needle extremely high pierce damage. Rapid speed.', color:'#38bdf8' },
@@ -368,7 +554,6 @@ function _updateEvolutionPanel(colony) {
   }
   _lastEvolveKey = key
 
-  // Render cards
   const container = document.getElementById('evolve-cards-list')
   if (container) {
     container.innerHTML = choices.map(cName => {
@@ -387,20 +572,18 @@ function _updateEvolutionPanel(colony) {
   el.style.display = 'flex'
 }
 
-// Global evolve trigger binder
 window.antEvolve = function(cName) {
   emit.evolve(cName)
 }
 
-export function initRecruitPanel(overlay) {
-  // recruitment panel is removed in Arras overhauled. Keep blank placeholder for boot sequence
+export function initRecruitPanel() {
 }
 
 let _hudShown = false
 function _showHUDPanels() {
   if (_hudShown) return
   _hudShown = true
-  ;['hud-resources','hud-daycycle','hud-stats-panel','hud-level-bar','hud-build','hud-killfeed','help-btn']
+  ;['hud-resources','hud-daycycle','hud-stats-panel','hud-level-bar','hud-build','hud-killfeed','help-btn','hud-diplomacy-panel']
     .forEach(id => {
       const el = document.getElementById(id)
       if (el) el.style.display = 'flex'
@@ -431,6 +614,18 @@ function injectStyles() {
     .build-icon{font-size:19px}.build-label{font-family:'Cinzel',serif;font-size:8px;
       letter-spacing:0.12em;color:#9ca38f}.build-cost{font-size:10px;color:#4ade80;font-weight:700;}
 
+    /* Player Diplomacy List */
+    .player-dipl-row{display:flex;align-items:center;gap:10px;padding:8px 10px;
+      background:rgba(255,255,255,0.02);border:0.5px solid rgba(74,222,128,0.08);
+      border-radius:8px;transition:all 0.15s;}
+    .player-dipl-row:hover{background:rgba(255,255,255,0.04);border-color:rgba(74,222,128,0.25);}
+    .dipl-btn{font-size:8px;font-family:'Cinzel',serif;font-weight:700;padding:2px 6px;
+      border:none;border-radius:4px;cursor:pointer;transition:transform 0.1s;}
+    .dipl-btn:hover{transform:scale(1.05)}
+    .war-btn{background:#ef4444;color:#ffffff}
+    .break-btn{background:#b91c1c;color:#ffffff}
+    .ally-btn{background:#10b981;color:#ffffff}
+
     /* Stat Upgrade Rows */
     .stat-upgrade-row{display:flex;align-items:center;gap:10px;padding:3px 0;height:24px}
     .stat-lbl{font-size:13px;color:#e8e6d9;min-width:65px;font-family:'Crimson Pro',serif}
@@ -458,11 +653,12 @@ function injectStyles() {
       font-weight:700;letter-spacing:0.08em;cursor:pointer;transition:all 0.15s;}
     .evolve-card:hover .evolve-card-btn{background:var(--c);color:#070705}
 
-    .kill-entry{background:rgba(10,10,14,0.85);backdrop-filter:blur(10px);
-      border:0.5px solid rgba(239,68,68,0.22);border-radius:8px;
-      padding:6px 14px;color:#fca5a5;font-size:12px;animation:_ki 0.3s ease both;
-      box-shadow:0 4px 12px rgba(0,0,0,0.45);}
-    @keyframes _ki{from{opacity:0;transform:translateX(10px)}}
+    .kill-entry{background:rgba(10,10,14,0.92);backdrop-filter:blur(12px);
+      border:0.5px solid rgba(74,222,128,0.3);border-radius:8px;
+      padding:7px 16px;color:#e8e6d9;font-size:12px;animation:_ki 0.4s cubic-bezier(0.16, 1, 0.3, 1) both;
+      box-shadow:0 6px 18px rgba(0,0,0,0.6);margin-bottom:4px;}
+    @keyframes _ki{from{opacity:0;transform:translateY(-10px)} to{opacity:1;transform:translateY(0)}}
+    @keyframes _ko{from{opacity:1;transform:translateY(0) scale(1)} to{opacity:0;transform:translateY(-10px) scale(0.9)}}
     .toast{padding:8px 24px;border-radius:99px;background:rgba(10,10,14,0.92);
       backdrop-filter:blur(10px);border:0.5px solid rgba(74,222,128,0.25);
       color:#e8e6d9;font-size:13px;font-family:'Crimson Pro',serif;
@@ -479,6 +675,32 @@ function injectStyles() {
       white-space:nowrap;flex-shrink:0;font-family:'Cinzel',serif;letter-spacing:0.05em}
     .ctrl-d{color:#9ca38f;font-size:13px}
     .ctrl-note{color:#9ca38f;font-size:12.5px;font-style:italic;margin:6px 0 0 4px;line-height:1.55}
+
+    @keyframes fadeUp {
+      from { opacity: 0; transform: translate(-50%, 15px); }
+      to { opacity: 1; transform: translate(-50%, 0); }
+    }
+
+    @media (max-width: 1100px) {
+      #hud-stats-panel { bottom: 12px; left: 12px; transform: scale(0.85); transform-origin: bottom left; }
+      #hud-resources { top: 12px; left: 12px; transform: scale(0.85); transform-origin: top left; }
+      #hud-diplomacy-panel { top: 52px; right: 12px; transform: scale(0.85); transform-origin: top right; }
+      #help-btn { top: 12px; right: 12px; transform: scale(0.85); }
+      #hud-level-bar { bottom: 12px; transform: translateX(-50%) scale(0.82); transform-origin: bottom center; }
+      #hud-build { bottom: 68px; transform: translateX(-50%) scale(0.82); transform-origin: bottom center; }
+      #hud-killfeed { top: 52px; right: 220px; transform: scale(0.85); transform-origin: top right; }
+    }
+
+    @media (max-width: 768px) {
+      #hud-stats-panel { bottom: 8px; left: 8px; transform: scale(0.72); transform-origin: bottom left; }
+      #hud-resources { top: 8px; left: 8px; transform: scale(0.72); transform-origin: top left; }
+      #hud-diplomacy-panel { top: 48px; right: 8px; transform: scale(0.72); transform-origin: top right; }
+      #help-btn { top: 8px; right: 8px; transform: scale(0.72); }
+      #hud-level-bar { bottom: 8px; transform: translateX(-50%) scale(0.72); transform-origin: bottom center; }
+      #hud-build { bottom: 62px; transform: translateX(-50%) scale(0.72); transform-origin: bottom center; }
+      #hud-killfeed { display: none !important; }
+      #hud-daycycle { transform: translateX(-50%) scale(0.8); top: 8px; }
+    }
   `
   document.head.appendChild(s)
 }

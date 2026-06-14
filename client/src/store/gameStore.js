@@ -25,7 +25,13 @@ export const useGameStore = createStore((set) => ({
     chambers: {},
     territory: null,
     ants: {},
-    activeSkillCooldown: 0
+    activeSkillCooldown: 0,
+
+    // Life & Relation System
+    lives: 3,
+    respawnTimer: 0,
+    invulnerableTimer: 0,
+    relations: {}
   },
   updateColony:    (patch) => set(s => ({ colony: { ...s.colony, ...patch } })),
   updateResources: (res)   => set(s => ({
@@ -44,11 +50,13 @@ export const useGameStore = createStore((set) => ({
   setMap:      (seed)  => set({ mapSeed: seed }),
   setDayCycle: (phase) => set({ dayPhase: phase, dayTimer: 240 }),
 
-  // Arras.io lists
   projectiles: [],
   foodShapes: [],
   clouds: [],
   predators: [],
+
+  // Alliance invites queue
+  allianceRequests: [],
 
   selectedAntIds: [],
   setSelection: (ids) => set({ selectedAntIds: ids }),
