@@ -15,14 +15,17 @@ RUN cd client && npm run build
 FROM node:20-alpine
 WORKDIR /app
 
-COPY --chown=node:node server/package*.json ./server/
+# Create a non-root user with UID 10014 to satisfy Choreo's platform policy
+RUN adduser -u 10014 -D choreouser
+
+COPY --chown=10014:10014 server/package*.json ./server/
 RUN cd server && npm install --production
 
-COPY --chown=node:node server/ ./server/
-COPY --chown=node:node --from=builder /app/server/public ./server/public
+COPY --chown=10014:10014 server/ ./server/
+COPY --chown=10014:10014 --from=builder /app/server/public ./server/public
 
-# Run as non-root node user
-USER node
+# Run as non-root user 10014
+USER 10014
 
 EXPOSE 3000
 CMD ["node", "server/index.js"]
