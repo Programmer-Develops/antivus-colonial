@@ -1,7 +1,7 @@
 import { defineConfig } from 'vite'
 
 export default defineConfig({
-  base: '/antivus-colonial/backend/v1.0/',
+  base: '/antivus-colonial/world/v1.0/',
   server: {
     port: 5173,
     proxy: {
