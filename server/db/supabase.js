@@ -1,5 +1,10 @@
 // ─── Supabase client for persistent data ─────────────────────────────────────
 import { createClient } from '@supabase/supabase-js'
+import WebSocket from 'ws'
+
+if (!globalThis.WebSocket) {
+  globalThis.WebSocket = WebSocket
+}
 
 const SUPABASE_URL = process.env.SUPABASE_URL
 const SUPABASE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY
