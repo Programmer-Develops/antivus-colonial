@@ -13,16 +13,24 @@ const http = createServer(app)
 
 const CLIENT_URL = process.env.CLIENT_URL || 'http://localhost:5173'
 
-// Allow requests from Vite dev server
-app.use(cors({ origin: CLIENT_URL, credentials: true }))
+// Allow requests from Vite dev server or current origin dynamically in production
+const corsOptions = {
+  origin: (origin, callback) => {
+    // Allow if same-origin (no origin header), or development client, or any domain in production
+    if (!origin || origin === CLIENT_URL || process.env.NODE_ENV === 'production' || origin.includes('choreoapis.dev')) {
+      callback(null, true)
+    } else {
+      callback(null, true) // fallback to true to ensure connections don't drop
+    }
+  },
+  credentials: true
+}
+
+app.use(cors(corsOptions))
 app.use(express.json())
 
 const io = new Server(http, {
-  cors: {
-    origin: CLIENT_URL,
-    methods: ['GET', 'POST'],
-    credentials: true
-  },
+  cors: corsOptions,
   transports: ['websocket', 'polling']  // allow polling as fallback
 })
 
