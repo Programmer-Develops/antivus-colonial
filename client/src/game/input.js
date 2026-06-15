@@ -81,7 +81,7 @@ export function initInput(app, cam) {
     const { phase } = useGameStore.getState()
     if (phase !== 'playing') return
 
-    const key = e.key.toLowerCase()
+    const key = (e.key || '').toLowerCase()
     if (key === 'w' || e.key === 'ArrowUp')    _keys.w = true
     if (key === 's' || e.key === 'ArrowDown')  _keys.s = true
     if (key === 'a' || e.key === 'ArrowLeft')  _keys.a = true
@@ -102,7 +102,7 @@ export function initInput(app, cam) {
   })
 
   window.addEventListener('keyup', (e) => {
-    const key = e.key.toLowerCase()
+    const key = (e.key || '').toLowerCase()
     if (key === 'w' || e.key === 'ArrowUp')    _keys.w = false
     if (key === 's' || e.key === 'ArrowDown')  _keys.s = false
     if (key === 'a' || e.key === 'ArrowLeft')  _keys.a = false
