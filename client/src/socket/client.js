@@ -5,7 +5,12 @@ let socket = null
 
 export function initSocket() {
   const SERVER_URL = import.meta.env.VITE_SERVER_URL || (import.meta.env.PROD ? '' : 'http://localhost:3000')
-  socket = io(SERVER_URL, { transports: ['websocket','polling'], reconnectionAttempts: 5 })
+  const path = window.location.pathname.replace(/\/$/, '') + '/socket.io'
+  socket = io(SERVER_URL, { 
+    path, 
+    transports: ['websocket','polling'], 
+    reconnectionAttempts: 5 
+  })
   const store = useGameStore.getState()
 
   socket.on('connect', () => {
