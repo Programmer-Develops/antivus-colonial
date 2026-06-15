@@ -8,7 +8,7 @@ export function initSocket() {
   const path = window.location.pathname.replace(/\/$/, '') + '/socket.io'
   socket = io(SERVER_URL, { 
     path, 
-    transports: ['websocket','polling'], 
+    transports: ['polling', 'websocket'], 
     reconnectionAttempts: 5 
   })
   const store = useGameStore.getState()
