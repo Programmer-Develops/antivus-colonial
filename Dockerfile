@@ -15,11 +15,14 @@ RUN cd client && npm run build
 FROM node:20-alpine
 WORKDIR /app
 
-COPY server/package*.json ./server/
+COPY --chown=node:node server/package*.json ./server/
 RUN cd server && npm install --production
 
-COPY server/ ./server/
-COPY --from=builder /app/server/public ./server/public
+COPY --chown=node:node server/ ./server/
+COPY --chown=node:node --from=builder /app/server/public ./server/public
+
+# Run as non-root node user
+USER node
 
 EXPOSE 3000
 CMD ["node", "server/index.js"]
