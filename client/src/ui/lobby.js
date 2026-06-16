@@ -20,15 +20,6 @@ export function showLobby() {
       <div class="lobby-grid-overlay"></div>
       <div class="lobby-particles" id="lobby-particles"></div>
 
-      <!-- Top Dashboard Header Status -->
-      <div class="lobby-top-status">
-        <div style="display:flex;align-items:center;gap:8px;">
-          <span class="status-dot animate-pulse"></span>
-          <span style="font-size:11px;font-weight:700;letter-spacing:0.15em;">ANTIVUS NETWORK: OPERATIONAL</span>
-        </div>
-        <div style="font-size:11px;color:#6b6b5a;letter-spacing:0.1em;" class="header-console-text">SECURE CONSOLE V2.8.5</div>
-      </div>
-
       <div class="lobby-content">
         <!-- Logo -->
         <div class="lobby-header">
