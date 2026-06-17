@@ -5,7 +5,7 @@ let redis = null
 
 if (process.env.REDIS_URL && process.env.REDIS_URL !== 'placeholder') {
   redis = new Redis(process.env.REDIS_URL, {
-    maxRetriesPerRequest: 3,
+    maxRetriesPerRequest: null,
     lazyConnect: true,
     tls: process.env.REDIS_URL.startsWith('rediss://') ? {} : undefined
   })
